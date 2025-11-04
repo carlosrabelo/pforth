@@ -1,0 +1,19 @@
+# ============================================================================
+# CPP
+# ============================================================================
+
+# Directories
+bin/*
+!bin/.gitkeep
+obj/
+pforth/lib/*
+!pforth/lib/.gitkeep
+
+# Files
+*.a
+*.d
+*.o
+*.out
+*.so
+compile_commands.json
+pforth/lib/catch.hpp
