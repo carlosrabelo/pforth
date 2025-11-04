@@ -42,4 +42,43 @@ void Forth::emit() {
     }
 }
 
+void Forth::cr() {
+    if (out) {
+        out->put('\n');
+    }
+}
+
+void Forth::space() {
+    if (out) {
+        out->put(' ');
+    }
+}
+
+void Forth::spaces() {
+    Cell n = pop_ds();
+    if (out && n > 0) {
+        for (Cell i = 0; i < n; ++i) {
+            out->put(' ');
+        }
+    }
+}
+
+void Forth::type() {
+    Cell len = pop_ds();
+    Cell addr = pop_ds();
+    if (out && len > 0) {
+        uint16_t uaddr = static_cast<uint16_t>(addr);
+        for (Cell i = 0; i < len; ++i) {
+            uint32_t curr = static_cast<uint32_t>(uaddr) + i;
+            if (curr < memory.size()) {
+                out->put(static_cast<char>(memory[curr]));
+            }
+        }
+    }
+}
+
+void Forth::bye() {
+    running = false;
+}
+
 } // namespace pforth

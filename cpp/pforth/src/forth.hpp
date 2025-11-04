@@ -28,6 +28,11 @@ public:
 
     void key();
     void emit();
+    void cr();
+    void space();
+    void spaces();
+    void type();
+    void bye();
 };
 
 } // namespace pforth
