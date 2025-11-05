@@ -1,10 +1,49 @@
 #include "forth.hpp"
+#include <csignal>
 
 namespace pforth {
+
+static Forth* g_active_forth = nullptr;
+
+static void sigint_handler(int) {
+    if (g_active_forth) {
+        g_active_forth->interrupted.store(1);
+    }
+}
 
 Forth::Forth(std::istream* input, std::ostream* output)
     : in(input), out(output) {
     memory.fill(0);
+}
+
+Forth::~Forth() {
+    remove_signal_handler();
+}
+
+void Forth::install_signal_handler() {
+    g_active_forth = this;
+    std::signal(SIGINT, sigint_handler);
+}
+
+void Forth::remove_signal_handler() {
+    if (g_active_forth == this) {
+        std::signal(SIGINT, SIG_DFL);
+        g_active_forth = nullptr;
+    }
+}
+
+void Forth::check_interrupt() {
+    if (interrupted.load() != 0) {
+        interrupted.store(0);
+        abort();
+        throw std::runtime_error("INTERRUPTED");
+    }
+}
+
+void Forth::abort() {
+    ds.clear();
+    rs.clear();
+    state = false;
 }
 
 void Forth::push_ds(Cell val) {
@@ -141,6 +180,39 @@ void Forth::expect() {
 
 void Forth::span() {
     push_ds(1000);
+}
+
+void Forth::interpret_line(const std::string& line) {
+    (void)line;
+    // Word dispatch wired in later specs (Spec 006)
+}
+
+void Forth::repl_step() {
+    try {
+        if (!state && out) {
+            *out << " ok\n";
+        }
+        std::string line = read_line();
+        if (!running) {
+            return;
+        }
+        check_interrupt();
+        interpret_line(line);
+    } catch (const std::exception& e) {
+        if (out) {
+            *out << "\n" << e.what() << "\n";
+        }
+        abort();
+    }
+}
+
+void Forth::quit() {
+    install_signal_handler();
+    running = true;
+    abort();
+    while (running) {
+        repl_step();
+    }
 }
 
 } // namespace pforth

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <iostream>
 #include <stdexcept>
@@ -18,6 +19,8 @@ public:
     std::array<std::uint8_t, 65536> memory{};
     int dp{1024};
     bool running{true};
+    bool state{false}; // false: interpreting, true: compiling
+    std::atomic<int> interrupted{0};
 
     // Text Input Buffer & input cursor
     std::string tib;
@@ -27,6 +30,7 @@ public:
     std::ostream* out{&std::cout};
 
     Forth(std::istream* input = &std::cin, std::ostream* output = &std::cout);
+    ~Forth();
 
     void push_ds(Cell val);
     Cell pop_ds();
@@ -49,6 +53,15 @@ public:
     std::string read_line();
     void expect();
     void span();
+
+    // Spec 001.4 Interactive REPL with Interrupt Handling
+    void install_signal_handler();
+    void remove_signal_handler();
+    void check_interrupt();
+    void abort();
+    void repl_step();
+    void quit();
+    virtual void interpret_line(const std::string& line);
 };
 
 } // namespace pforth
