@@ -86,6 +86,10 @@ Cell Forth::peek_rs() const {
     return rs.back();
 }
 
+void Forth::depth() {
+    push_ds(static_cast<Cell>(ds.size()));
+}
+
 void Forth::key() {
     char c = 0;
     if (in && in->get(c)) {
@@ -184,7 +188,6 @@ void Forth::span() {
 
 void Forth::interpret_line(const std::string& line) {
     (void)line;
-    // Word dispatch wired in later specs (Spec 006)
 }
 
 void Forth::repl_step() {
