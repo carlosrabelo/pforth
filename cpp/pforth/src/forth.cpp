@@ -121,6 +121,43 @@ void Forth::store_cell(uint32_t addr, Cell val) {
     memory[addr + 1] = static_cast<uint8_t>((val >> 8) & 0xFF);
 }
 
+void Forth::word_fetch() {
+    Cell addr = pop_ds();
+    push_ds(fetch_cell(static_cast<uint16_t>(addr)));
+}
+
+void Forth::word_store() {
+    Cell addr = pop_ds();
+    Cell val = pop_ds();
+    store_cell(static_cast<uint16_t>(addr), val);
+}
+
+void Forth::word_c_fetch() {
+    Cell addr = pop_ds();
+    push_ds(static_cast<Cell>(c_fetch(static_cast<uint16_t>(addr))));
+}
+
+void Forth::word_c_store() {
+    Cell addr = pop_ds();
+    Cell val = pop_ds();
+    c_store(static_cast<uint16_t>(addr), static_cast<uint8_t>(val & 0xFF));
+}
+
+void Forth::word_plus_store() {
+    Cell addr = pop_ds();
+    Cell n = pop_ds();
+    Cell cur = fetch_cell(static_cast<uint16_t>(addr));
+    store_cell(static_cast<uint16_t>(addr), static_cast<Cell>(cur + n));
+}
+
+void Forth::word_question() {
+    Cell addr = pop_ds();
+    Cell val = fetch_cell(static_cast<uint16_t>(addr));
+    if (out) {
+        *out << val << " ";
+    }
+}
+
 void Forth::key() {
     char c = 0;
     if (in && in->get(c)) {

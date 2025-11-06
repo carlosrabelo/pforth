@@ -48,6 +48,14 @@ public:
     Cell fetch_cell(uint32_t addr) const;
     void store_cell(uint32_t addr, Cell val);
 
+    // Spec 002.3 Cell and Byte Memory Access Primitives
+    void word_fetch();      // @
+    void word_store();      // !
+    void word_c_fetch();    // C@
+    void word_c_store();    // C!
+    void word_plus_store(); // +!
+    void word_question();   // ?
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();
