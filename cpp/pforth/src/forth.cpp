@@ -200,6 +200,29 @@ void Forth::word_cmover() {
     }
 }
 
+void Forth::word_dup() {
+    push_ds(peek_ds());
+}
+
+void Forth::word_drop() {
+    pop_ds();
+}
+
+void Forth::word_swap() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    push_ds(b);
+    push_ds(a);
+}
+
+void Forth::word_over() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    push_ds(a);
+    push_ds(b);
+    push_ds(a);
+}
+
 void Forth::key() {
     char c = 0;
     if (in && in->get(c)) {
