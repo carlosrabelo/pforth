@@ -158,6 +158,48 @@ void Forth::word_question() {
     }
 }
 
+void Forth::word_fill() {
+    Cell val = pop_ds();
+    Cell len = pop_ds();
+    Cell addr = pop_ds();
+    uint8_t byte_val = static_cast<uint8_t>(val & 0xFF);
+    uint32_t start = static_cast<uint16_t>(addr);
+    for (int i = 0; i < len; ++i) {
+        c_store(start + i, byte_val);
+    }
+}
+
+void Forth::word_erase() {
+    Cell len = pop_ds();
+    Cell addr = pop_ds();
+    uint32_t start = static_cast<uint16_t>(addr);
+    for (int i = 0; i < len; ++i) {
+        c_store(start + i, 0);
+    }
+}
+
+void Forth::word_cmove() {
+    Cell len = pop_ds();
+    Cell src = pop_ds();
+    Cell dst = pop_ds();
+    uint32_t s = static_cast<uint16_t>(src);
+    uint32_t d = static_cast<uint16_t>(dst);
+    for (int i = 0; i < len; ++i) {
+        c_store(d + i, c_fetch(s + i));
+    }
+}
+
+void Forth::word_cmover() {
+    Cell len = pop_ds();
+    Cell src = pop_ds();
+    Cell dst = pop_ds();
+    uint32_t s = static_cast<uint16_t>(src);
+    uint32_t d = static_cast<uint16_t>(dst);
+    for (int i = len - 1; i >= 0; --i) {
+        c_store(d + i, c_fetch(s + i));
+    }
+}
+
 void Forth::key() {
     char c = 0;
     if (in && in->get(c)) {
