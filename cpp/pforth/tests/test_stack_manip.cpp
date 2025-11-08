@@ -136,3 +136,75 @@ TEST_CASE("Stack Manip - NIP and TUCK", "[stack]") {
     REQUIRE_THROWS_WITH(f.word_tuck(), "DATA STACK UNDERFLOW");
 }
 
+TEST_CASE("Stack Manip - 2DUP and 2DROP", "[stack]") {
+    pforth::Forth f;
+
+    // 2DUP ( a b -- a b a b )
+    f.push_ds(10);
+    f.push_ds(20);
+    f.word_2dup();
+    REQUIRE(f.ds.size() == 4);
+    REQUIRE(f.pop_ds() == 20);
+    REQUIRE(f.pop_ds() == 10);
+    REQUIRE(f.pop_ds() == 20);
+    REQUIRE(f.pop_ds() == 10);
+
+    // 2DUP underflow with only 1 item
+    f.push_ds(1);
+    REQUIRE_THROWS_WITH(f.word_2dup(), "DATA STACK UNDERFLOW");
+
+    // 2DROP ( a b -- )
+    f.push_ds(30);
+    f.push_ds(40);
+    f.word_2drop();
+    REQUIRE(f.ds.empty());
+
+    // 2DROP underflow with only 1 item
+    f.push_ds(1);
+    REQUIRE_THROWS_WITH(f.word_2drop(), "DATA STACK UNDERFLOW");
+}
+
+TEST_CASE("Stack Manip - 2SWAP and 2OVER", "[stack]") {
+    pforth::Forth f;
+
+    // 2SWAP ( a b c d -- c d a b )
+    f.push_ds(1);
+    f.push_ds(2);
+    f.push_ds(3);
+    f.push_ds(4);
+    f.word_2swap();
+    REQUIRE(f.ds.size() == 4);
+    REQUIRE(f.pop_ds() == 2);
+    REQUIRE(f.pop_ds() == 1);
+    REQUIRE(f.pop_ds() == 4);
+    REQUIRE(f.pop_ds() == 3);
+
+    // 2SWAP underflow with only 3 items
+    f.push_ds(1);
+    f.push_ds(2);
+    f.push_ds(3);
+    REQUIRE_THROWS_WITH(f.word_2swap(), "DATA STACK UNDERFLOW");
+    f.ds.clear();
+
+    // 2OVER ( a b c d -- a b c d a b )
+    f.push_ds(1);
+    f.push_ds(2);
+    f.push_ds(3);
+    f.push_ds(4);
+    f.word_2over();
+    REQUIRE(f.ds.size() == 6);
+    REQUIRE(f.pop_ds() == 2);
+    REQUIRE(f.pop_ds() == 1);
+    REQUIRE(f.pop_ds() == 4);
+    REQUIRE(f.pop_ds() == 3);
+    REQUIRE(f.pop_ds() == 2);
+    REQUIRE(f.pop_ds() == 1);
+
+    // 2OVER underflow with only 3 items
+    f.push_ds(1);
+    f.push_ds(2);
+    f.push_ds(3);
+    REQUIRE_THROWS_WITH(f.word_2over(), "DATA STACK UNDERFLOW");
+}
+
+

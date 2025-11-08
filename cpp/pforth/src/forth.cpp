@@ -262,6 +262,44 @@ void Forth::word_tuck() {
     push_ds(b);
 }
 
+void Forth::word_2dup() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    push_ds(a);
+    push_ds(b);
+    push_ds(a);
+    push_ds(b);
+}
+
+void Forth::word_2drop() {
+    pop_ds();
+    pop_ds();
+}
+
+void Forth::word_2swap() {
+    Cell d = pop_ds();
+    Cell c = pop_ds();
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    push_ds(c);
+    push_ds(d);
+    push_ds(a);
+    push_ds(b);
+}
+
+void Forth::word_2over() {
+    Cell d = pop_ds();
+    Cell c = pop_ds();
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    push_ds(a);
+    push_ds(b);
+    push_ds(c);
+    push_ds(d);
+    push_ds(a);
+    push_ds(b);
+}
+
 void Forth::key() {
     char c = 0;
     if (in && in->get(c)) {
