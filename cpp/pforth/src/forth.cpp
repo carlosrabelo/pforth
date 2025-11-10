@@ -315,6 +315,57 @@ void Forth::word_r_fetch() {
     push_ds(val);
 }
 
+void Forth::word_plus() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    push_ds(static_cast<Cell>(a + b));
+}
+
+void Forth::word_minus() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    push_ds(static_cast<Cell>(a - b));
+}
+
+void Forth::word_multiply() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    push_ds(static_cast<Cell>(a * b));
+}
+
+void Forth::word_slash_mod() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    if (b == 0) {
+        throw std::runtime_error("DIVISION BY ZERO");
+    }
+    push_ds(static_cast<Cell>(a % b));
+    push_ds(static_cast<Cell>(a / b));
+}
+
+void Forth::word_slash() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    if (b == 0) {
+        throw std::runtime_error("DIVISION BY ZERO");
+    }
+    push_ds(static_cast<Cell>(a / b));
+}
+
+void Forth::word_mod() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    if (b == 0) {
+        throw std::runtime_error("DIVISION BY ZERO");
+    }
+    push_ds(static_cast<Cell>(a % b));
+}
+
+void Forth::word_negate() {
+    Cell n = pop_ds();
+    push_ds(static_cast<Cell>(-n));
+}
+
 void Forth::key() {
     char c = 0;
     if (in && in->get(c)) {
