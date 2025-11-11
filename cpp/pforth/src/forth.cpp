@@ -413,6 +413,29 @@ void Forth::word_max() {
     push_ds(a > b ? a : b);
 }
 
+void Forth::word_and() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    push_ds(static_cast<Cell>(a & b));
+}
+
+void Forth::word_or() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    push_ds(static_cast<Cell>(a | b));
+}
+
+void Forth::word_xor() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    push_ds(static_cast<Cell>(a ^ b));
+}
+
+void Forth::word_invert() {
+    Cell n = pop_ds();
+    push_ds(static_cast<Cell>(~n));
+}
+
 void Forth::key() {
     char c = 0;
     if (in && in->get(c)) {
