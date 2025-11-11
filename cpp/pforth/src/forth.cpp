@@ -366,6 +366,53 @@ void Forth::word_negate() {
     push_ds(static_cast<Cell>(-n));
 }
 
+void Forth::word_one_plus() {
+    Cell n = pop_ds();
+    push_ds(static_cast<Cell>(n + 1));
+}
+
+void Forth::word_one_minus() {
+    Cell n = pop_ds();
+    push_ds(static_cast<Cell>(n - 1));
+}
+
+void Forth::word_two_plus() {
+    Cell n = pop_ds();
+    push_ds(static_cast<Cell>(n + 2));
+}
+
+void Forth::word_two_minus() {
+    Cell n = pop_ds();
+    push_ds(static_cast<Cell>(n - 2));
+}
+
+void Forth::word_two_star() {
+    Cell n = pop_ds();
+    push_ds(static_cast<Cell>(n << 1));
+}
+
+void Forth::word_two_slash() {
+    Cell n = pop_ds();
+    push_ds(static_cast<Cell>(n >> 1));
+}
+
+void Forth::word_abs() {
+    Cell n = pop_ds();
+    push_ds(n < 0 ? static_cast<Cell>(-n) : n);
+}
+
+void Forth::word_min() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    push_ds(a < b ? a : b);
+}
+
+void Forth::word_max() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    push_ds(a > b ? a : b);
+}
+
 void Forth::key() {
     char c = 0;
     if (in && in->get(c)) {

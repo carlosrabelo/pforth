@@ -95,6 +95,17 @@ public:
     void word_mod();       // MOD
     void word_negate();    // NEGATE
 
+    // Spec 004.2 Arithmetic Scaling and Helper Words
+    void word_one_plus();  // 1+
+    void word_one_minus(); // 1-
+    void word_two_plus();  // 2+
+    void word_two_minus(); // 2-
+    void word_two_star();  // 2*
+    void word_two_slash(); // 2/
+    void word_abs();       // ABS
+    void word_min();       // MIN
+    void word_max();       // MAX
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();
