@@ -112,6 +112,22 @@ public:
     void word_xor();    // XOR
     void word_invert(); // INVERT
 
+    // Spec 004.4 Comparison and Equality Primitives
+    void word_equals();          // =
+    void word_not_equals();      // <>
+    void word_less();            // <
+    void word_greater();         // >
+    void word_less_equal();      // <=
+    void word_greater_equal();   // >=
+    void word_zero_equals();     // 0=
+    void word_zero_not_equals(); // 0<>
+    void word_zero_less();       // 0<
+    void word_zero_greater();    // 0>
+    void word_u_less();          // U<
+    void word_u_greater();       // U>
+    void word_u_less_equal();    // U<=
+    void word_u_greater_equal(); // U>=
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();
