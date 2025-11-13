@@ -3,14 +3,36 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace pforth {
 
 using Cell = std::int16_t;
+
+enum class WordType {
+    Primitive,
+    Colon,
+    Constant,
+    Variable,
+    Create
+};
+
+class Forth;
+using XTCode = std::function<void(Forth*)>;
+
+struct Word {
+    std::string name;
+    bool immediate{false};
+    WordType type{WordType::Primitive};
+    XTCode code;
+    std::vector<Cell> body;
+    int pfa{0};
+};
 
 class Forth {
 public:
@@ -22,6 +44,11 @@ public:
     bool state{false}; // false: interpreting, true: compiling
     std::atomic<int> interrupted{0};
 
+    // Dictionary
+    std::vector<Word> words;
+    std::unordered_map<std::string, int> words_by_name;
+    int latest{-1};
+
     // Text Input Buffer & input cursor
     std::string tib;
     size_t in_ptr{0};
@@ -31,6 +58,16 @@ public:
 
     Forth(std::istream* input = &std::cin, std::ostream* output = &std::cout);
     ~Forth();
+
+    // Dictionary management
+    Word* define_word(const std::string& name, WordType type, XTCode code, const std::vector<Cell>& body = {}, bool immediate = false);
+    Word* define_primitive(const std::string& name, XTCode code);
+    Word* define_immediate(const std::string& name, XTCode code);
+    Word* lookup(const std::string& name);
+    int find_xt(const std::string& name) const;
+    Word* latest_word();
+    void init_primitives();
+    bool parse_word(std::string& word_out);
 
     // Spec 002.1 Data and Return Stack Primitives
     void push_ds(Cell val);
@@ -127,6 +164,11 @@ public:
     void word_u_greater();       // U>
     void word_u_less_equal();    // U<=
     void word_u_greater_equal(); // U>=
+
+    // Spec 005.1 Dictionary Entry Structure and Lookup
+    void word_find();    // FIND
+    void word_tick();    // '
+    void word_to_body(); // >BODY
 
     // Spec 001.2 Console I/O Primitives
     void key();
