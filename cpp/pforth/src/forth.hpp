@@ -44,6 +44,10 @@ public:
     bool state{false}; // false: interpreting, true: compiling
     std::atomic<int> interrupted{0};
 
+    // Execution frame
+    std::vector<Cell> current_body;
+    int ip{0};
+
     // Dictionary
     std::vector<Word> words;
     std::unordered_map<std::string, int> words_by_name;
@@ -179,6 +183,10 @@ public:
     void word_allot();   // ALLOT
     void word_comma();   // ,
     void word_c_comma(); // C,
+
+    // Spec 005.3 Execution Token Dispatcher
+    void execute_word(int xt);
+    void word_execute(); // EXECUTE
 
     // Spec 001.2 Console I/O Primitives
     void key();

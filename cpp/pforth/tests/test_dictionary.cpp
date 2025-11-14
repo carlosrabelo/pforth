@@ -127,3 +127,44 @@ TEST_CASE("Dictionary - Memory allocation (DP, HERE, PAD, ALLOT, comma, c-comma)
     REQUIRE(f.c_fetch(1036) == 0xAB);
 }
 
+TEST_CASE("Dictionary - Execution token dispatcher (EXECUTE)", "[dictionary]") {
+    pforth::Forth f;
+
+    // 1. Primitive execution: '+'
+    int plus_xt = f.find_xt("+");
+    f.push_ds(12);
+    f.push_ds(18);
+    f.push_ds(plus_xt);
+    f.word_execute();
+    REQUIRE(f.ds.size() == 1);
+    REQUIRE(f.pop_ds() == 30);
+
+    // 2. Constant execution: pushes body[0]
+    f.define_word("MYCONST", pforth::WordType::Constant, nullptr, {999}, false);
+    int const_xt = f.find_xt("MYCONST");
+    f.push_ds(const_xt);
+    f.word_execute();
+    REQUIRE(f.pop_ds() == 999);
+
+    // 3. Variable execution: pushes PFA
+    pforth::Word* vword = f.define_word("MYVAR", pforth::WordType::Variable, nullptr, {}, false);
+    vword->pfa = 2048;
+    int var_xt = f.find_xt("MYVAR");
+    f.push_ds(var_xt);
+    f.word_execute();
+    REQUIRE(f.pop_ds() == 2048);
+
+    // 4. Create execution: pushes PFA
+    pforth::Word* crword = f.define_word("MYBUF", pforth::WordType::Create, nullptr, {}, false);
+    crword->pfa = 4096;
+    int cr_xt = f.find_xt("MYBUF");
+    f.push_ds(cr_xt);
+    f.word_execute();
+    REQUIRE(f.pop_ds() == 4096);
+
+    // 5. Invalid XT
+    f.push_ds(9999);
+    REQUIRE_THROWS_WITH(f.word_execute(), "INVALID EXECUTION TOKEN: 9999");
+}
+
+

@@ -797,6 +797,54 @@ void Forth::word_c_comma() {
     allot(1);
 }
 
+void Forth::word_execute() {
+    Cell xt = pop_ds();
+    execute_word(xt);
+}
+
+void Forth::execute_word(int xt) {
+    if (xt < 0 || static_cast<size_t>(xt) >= words.size()) {
+        throw std::runtime_error("INVALID EXECUTION TOKEN: " + std::to_string(xt));
+    }
+    const Word& w = words[xt];
+    switch (w.type) {
+    case WordType::Primitive:
+        if (w.code) {
+            w.code(this);
+        }
+        break;
+    case WordType::Constant:
+        if (!w.body.empty()) {
+            push_ds(w.body[0]);
+        }
+        break;
+    case WordType::Variable:
+    case WordType::Create:
+        push_ds(static_cast<Cell>(w.pfa));
+        break;
+    case WordType::Colon: {
+        std::vector<Cell> saved_body = current_body;
+        int saved_ip = ip;
+        current_body = w.body;
+        ip = 0;
+        try {
+            while (ip < static_cast<int>(current_body.size())) {
+                check_interrupt();
+                int nxt = current_body[ip++];
+                execute_word(nxt);
+            }
+        } catch (...) {
+            current_body = saved_body;
+            ip = saved_ip;
+            throw;
+        }
+        current_body = saved_body;
+        ip = saved_ip;
+        break;
+    }
+    }
+}
+
 void Forth::init_primitives() {
     define_primitive("DUP", [](Forth* f) { f->word_dup(); });
     define_primitive("DROP", [](Forth* f) { f->word_drop(); });
@@ -888,6 +936,7 @@ void Forth::init_primitives() {
     define_primitive("ALLOT", [](Forth* f) { f->word_allot(); });
     define_primitive(",", [](Forth* f) { f->word_comma(); });
     define_primitive("C,", [](Forth* f) { f->word_c_comma(); });
+    define_primitive("EXECUTE", [](Forth* f) { f->word_execute(); });
 }
 
 } // namespace pforth
