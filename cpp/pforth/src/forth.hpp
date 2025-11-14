@@ -170,6 +170,16 @@ public:
     void word_tick();    // '
     void word_to_body(); // >BODY
 
+    // Spec 005.2 Dictionary Memory Allocation Pointers
+    Cell here() const;
+    void allot(int n);
+    void word_dp();      // DP
+    void word_here();    // HERE
+    void word_pad();     // PAD
+    void word_allot();   // ALLOT
+    void word_comma();   // ,
+    void word_c_comma(); // C,
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();
