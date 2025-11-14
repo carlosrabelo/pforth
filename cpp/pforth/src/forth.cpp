@@ -845,6 +845,35 @@ void Forth::execute_word(int xt) {
     }
 }
 
+void Forth::word_create() {
+    std::string token;
+    if (!parse_word(token)) {
+        throw std::runtime_error("WORD NAME EXPECTED");
+    }
+    Word* w = define_word(token, WordType::Create, nullptr, {}, false);
+    w->pfa = here();
+}
+
+void Forth::word_constant() {
+    Cell val = pop_ds();
+    std::string token;
+    if (!parse_word(token)) {
+        throw std::runtime_error("WORD NAME EXPECTED");
+    }
+    define_word(token, WordType::Constant, nullptr, {val}, false);
+}
+
+void Forth::word_variable() {
+    std::string token;
+    if (!parse_word(token)) {
+        throw std::runtime_error("WORD NAME EXPECTED");
+    }
+    Word* w = define_word(token, WordType::Variable, nullptr, {}, false);
+    w->pfa = here();
+    store_cell(static_cast<uint16_t>(here()), 0);
+    allot(2);
+}
+
 void Forth::init_primitives() {
     define_primitive("DUP", [](Forth* f) { f->word_dup(); });
     define_primitive("DROP", [](Forth* f) { f->word_drop(); });
@@ -937,6 +966,10 @@ void Forth::init_primitives() {
     define_primitive(",", [](Forth* f) { f->word_comma(); });
     define_primitive("C,", [](Forth* f) { f->word_c_comma(); });
     define_primitive("EXECUTE", [](Forth* f) { f->word_execute(); });
+
+    define_primitive("CREATE", [](Forth* f) { f->word_create(); });
+    define_primitive("CONSTANT", [](Forth* f) { f->word_constant(); });
+    define_primitive("VARIABLE", [](Forth* f) { f->word_variable(); });
 }
 
 } // namespace pforth

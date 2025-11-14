@@ -188,6 +188,11 @@ public:
     void execute_word(int xt);
     void word_execute(); // EXECUTE
 
+    // Spec 005.4 Defining Words
+    void word_create();   // CREATE
+    void word_constant(); // CONSTANT
+    void word_variable(); // VARIABLE
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();

@@ -167,4 +167,87 @@ TEST_CASE("Dictionary - Execution token dispatcher (EXECUTE)", "[dictionary]") {
     REQUIRE_THROWS_WITH(f.word_execute(), "INVALID EXECUTION TOKEN: 9999");
 }
 
+TEST_CASE("Dictionary - Defining words (CREATE, CONSTANT, VARIABLE)", "[dictionary]") {
+    pforth::Forth f;
+
+    // 1. CREATE
+    pforth::Cell before_create = f.here();
+    f.tib = "MYBUF";
+    f.in_ptr = 0;
+    f.word_create();
+
+    pforth::Word* w_buf = f.lookup("MYBUF");
+    REQUIRE(w_buf != nullptr);
+    REQUIRE(w_buf->type == pforth::WordType::Create);
+    REQUIRE(w_buf->pfa == before_create);
+
+    // Executing MYBUF pushes its PFA
+    int buf_xt = f.find_xt("MYBUF");
+    f.push_ds(buf_xt);
+    f.word_execute();
+    REQUIRE(f.pop_ds() == before_create);
+
+    // 2. VARIABLE
+    pforth::Cell before_var = f.here();
+    f.tib = "COUNTER";
+    f.in_ptr = 0;
+    f.word_variable();
+
+    pforth::Word* w_var = f.lookup("COUNTER");
+    REQUIRE(w_var != nullptr);
+    REQUIRE(w_var->type == pforth::WordType::Variable);
+    REQUIRE(w_var->pfa == before_var);
+    REQUIRE(f.here() == before_var + 2); // 2 bytes allocated
+
+    // Value initially 0
+    REQUIRE(f.fetch_cell(before_var) == 0);
+
+    // Executing COUNTER pushes its PFA
+    int var_xt = f.find_xt("COUNTER");
+    f.push_ds(var_xt);
+    f.word_execute();
+    REQUIRE(f.peek_ds() == before_var);
+
+    // Fetch value using @: ( addr -- 0 )
+    f.word_fetch();
+    REQUIRE(f.pop_ds() == 0);
+
+    // Store new value 77 and fetch back
+    f.push_ds(77);
+    f.push_ds(var_xt);
+    f.word_execute(); // pushes addr
+    f.word_store();   // store 77
+    REQUIRE(f.fetch_cell(before_var) == 77);
+
+    // 3. CONSTANT
+    f.push_ds(9876);
+    f.tib = "LIMIT";
+    f.in_ptr = 0;
+    f.word_constant();
+
+    pforth::Word* w_const = f.lookup("LIMIT");
+    REQUIRE(w_const != nullptr);
+    REQUIRE(w_const->type == pforth::WordType::Constant);
+
+    int const_xt = f.find_xt("LIMIT");
+    f.push_ds(const_xt);
+    f.word_execute();
+    REQUIRE(f.pop_ds() == 9876);
+
+    // Missing word name errors
+    f.tib = "   ";
+    f.in_ptr = 0;
+    REQUIRE_THROWS_WITH(f.word_create(), "WORD NAME EXPECTED");
+
+    f.tib = "   ";
+    f.in_ptr = 0;
+    REQUIRE_THROWS_WITH(f.word_variable(), "WORD NAME EXPECTED");
+
+    f.push_ds(1);
+    f.tib = "   ";
+    f.in_ptr = 0;
+    REQUIRE_THROWS_WITH(f.word_constant(), "WORD NAME EXPECTED");
+}
+
+
 
