@@ -193,6 +193,14 @@ public:
     void word_constant(); // CONSTANT
     void word_variable(); // VARIABLE
 
+    // Spec 006.1 Delimited Word Scanner and Numeric Parser
+    int get_base() const;
+    void set_base(int b);
+    bool parse_number(const std::string& token, Cell& out_val) const;
+    void word_word();   // WORD
+    void word_number(); // NUMBER
+    void word_base();   // BASE
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();
