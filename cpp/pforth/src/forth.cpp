@@ -48,7 +48,9 @@ void Forth::check_interrupt() {
 void Forth::abort() {
     ds.clear();
     rs.clear();
+    compile_list.clear();
     state = false;
+    in_ptr = tib.size();
 }
 
 void Forth::push_ds(Cell val) {
@@ -615,7 +617,9 @@ void Forth::span() {
 }
 
 void Forth::interpret_line(const std::string& line) {
-    (void)line;
+    tib = line;
+    in_ptr = 0;
+    interpret_loop();
 }
 
 void Forth::repl_step() {
@@ -987,6 +991,58 @@ void Forth::word_base() {
     push_ds(1004);
 }
 
+void Forth::interpret_loop() {
+    while (in_ptr < tib.size()) {
+        check_interrupt();
+        std::string token;
+        if (!parse_word(token)) {
+            break;
+        }
+        std::string upper_name;
+        for (char c : token) {
+            upper_name += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        }
+        Word* w = lookup(upper_name);
+        if (w) {
+            int xt = find_xt(upper_name);
+            if (state && !w->immediate) {
+                compile_list.push_back(static_cast<Cell>(xt));
+            } else {
+                execute_word(xt);
+            }
+        } else {
+            Cell num = 0;
+            if (parse_number(token, num)) {
+                if (state) {
+                    int lit_xt = find_xt("LIT");
+                    if (lit_xt < 0) {
+                        define_primitive("LIT", [](Forth* f) { f->word_lit(); });
+                        lit_xt = find_xt("LIT");
+                    }
+                    compile_list.push_back(static_cast<Cell>(lit_xt));
+                    compile_list.push_back(num);
+                } else {
+                    push_ds(num);
+                }
+            } else {
+                std::string err_token = token;
+                abort();
+                throw std::runtime_error("UNKNOWN WORD: " + err_token);
+            }
+        }
+    }
+}
+
+void Forth::word_interpret() {
+    interpret_loop();
+}
+
+void Forth::word_lit() {
+    if (ip < static_cast<int>(current_body.size())) {
+        push_ds(current_body[ip++]);
+    }
+}
+
 void Forth::init_primitives() {
     define_primitive("DUP", [](Forth* f) { f->word_dup(); });
     define_primitive("DROP", [](Forth* f) { f->word_drop(); });
@@ -1087,6 +1143,8 @@ void Forth::init_primitives() {
     define_primitive("WORD", [](Forth* f) { f->word_word(); });
     define_primitive("NUMBER", [](Forth* f) { f->word_number(); });
     define_primitive("BASE", [](Forth* f) { f->word_base(); });
+    define_primitive("INTERPRET", [](Forth* f) { f->word_interpret(); });
+    define_primitive("LIT", [](Forth* f) { f->word_lit(); });
 }
 
 } // namespace pforth

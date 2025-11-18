@@ -44,9 +44,10 @@ public:
     bool state{false}; // false: interpreting, true: compiling
     std::atomic<int> interrupted{0};
 
-    // Execution frame
+    // Execution frame & compilation list
     std::vector<Cell> current_body;
     int ip{0};
+    std::vector<Cell> compile_list;
 
     // Dictionary
     std::vector<Word> words;
@@ -200,6 +201,11 @@ public:
     void word_word();   // WORD
     void word_number(); // NUMBER
     void word_base();   // BASE
+
+    // Spec 006.2 Outer Text Interpreter Loop
+    void interpret_loop();
+    void word_interpret(); // INTERPRET
+    void word_lit();       // LIT
 
     // Spec 001.2 Console I/O Primitives
     void key();

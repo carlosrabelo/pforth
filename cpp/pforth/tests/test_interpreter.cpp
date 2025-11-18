@@ -102,3 +102,28 @@ TEST_CASE("Interpreter - WORD and NUMBER primitives", "[interpreter]") {
     REQUIRE(f.pop_ds() == 0); // failure
     REQUIRE(f.pop_ds() == 0);
 }
+
+TEST_CASE("Interpreter - Outer interpreter execution (INTERPRET, ABORT)", "[interpreter]") {
+    pforth::Forth f;
+
+    // Sequence of numbers and arithmetic
+    f.interpret_line("10 20 +");
+    REQUIRE(f.ds.size() == 1);
+    REQUIRE(f.pop_ds() == 30);
+
+    // DUP and multiply
+    f.interpret_line("5 DUP *");
+    REQUIRE(f.pop_ds() == 25);
+
+    // Multi-word line
+    f.interpret_line("1 2 3 4 + + +");
+    REQUIRE(f.pop_ds() == 10);
+
+    // Error handling on unknown word
+    f.push_ds(100);
+    REQUIRE_THROWS_WITH(f.interpret_line("UNKNOWNWORD 50 +"), "UNKNOWN WORD: UNKNOWNWORD");
+    // ABORT cleared stack and line
+    REQUIRE(f.ds.empty());
+    REQUIRE(f.state == false);
+}
+
