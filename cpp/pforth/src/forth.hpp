@@ -207,6 +207,14 @@ public:
     void word_interpret(); // INTERPRET
     void word_lit();       // LIT
 
+    // Spec 006.3 Compiler State & Directives
+    void word_state();           // STATE
+    void word_left_bracket();    // [
+    void word_right_bracket();   // ]
+    void word_literal();         // LITERAL
+    void word_compile();         // COMPILE
+    void word_bracket_compile(); // [COMPILE]
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();
