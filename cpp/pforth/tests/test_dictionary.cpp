@@ -88,9 +88,9 @@ TEST_CASE("Dictionary - Tick (') and >BODY", "[dictionary]") {
     REQUIRE(f.pop_ds() == 5432);
 
     // >BODY fallback (xt + 2)
-    f.push_ds(100);
+    f.push_ds(9999);
     f.word_to_body();
-    REQUIRE(f.pop_ds() == 102);
+    REQUIRE(f.pop_ds() == 10001);
 }
 
 TEST_CASE("Dictionary - Memory allocation (DP, HERE, PAD, ALLOT, comma, c-comma)", "[dictionary]") {
