@@ -1152,6 +1152,25 @@ void Forth::word_recurse() {
     compile_list.push_back(static_cast<Cell>(compiling_xt));
 }
 
+void Forth::word_branch() {
+    if (ip < static_cast<int>(current_body.size())) {
+        int offset = current_body[ip];
+        ip += offset;
+    }
+}
+
+void Forth::word_zero_branch() {
+    Cell flag = pop_ds();
+    if (ip < static_cast<int>(current_body.size())) {
+        int offset = current_body[ip];
+        if (flag == 0) {
+            ip += offset;
+        } else {
+            ip++;
+        }
+    }
+}
+
 void Forth::init_primitives() {
     define_primitive("DUP", [](Forth* f) { f->word_dup(); });
     define_primitive("DROP", [](Forth* f) { f->word_drop(); });
@@ -1267,6 +1286,9 @@ void Forth::init_primitives() {
     define_immediate(";", [](Forth* f) { f->word_semicolon(); });
     define_immediate("IMMEDIATE", [](Forth* f) { f->word_immediate(); });
     define_immediate("RECURSE", [](Forth* f) { f->word_recurse(); });
+
+    define_primitive("BRANCH", [](Forth* f) { f->word_branch(); });
+    define_primitive("0BRANCH", [](Forth* f) { f->word_zero_branch(); });
 }
 
 } // namespace pforth
