@@ -1171,6 +1171,53 @@ void Forth::word_zero_branch() {
     }
 }
 
+void Forth::word_if() {
+    if (!state) {
+        throw std::runtime_error("IF ONLY IN COMPILATION");
+    }
+    int xt = find_xt("0BRANCH");
+    if (xt < 0) {
+        define_primitive("0BRANCH", [](Forth* f) { f->word_zero_branch(); });
+        xt = find_xt("0BRANCH");
+    }
+    compile_list.push_back(static_cast<Cell>(xt));
+    compile_list.push_back(0);
+    push_ds(static_cast<Cell>(compile_list.size() - 1));
+}
+
+void Forth::word_then() {
+    if (!state) {
+        throw std::runtime_error("THEN ONLY IN COMPILATION");
+    }
+    int pos = pop_ds();
+    if (pos < 0 || pos >= static_cast<int>(compile_list.size())) {
+        throw std::runtime_error("INVALID BRANCH TARGET");
+    }
+    Cell offset = static_cast<Cell>(compile_list.size() - pos);
+    compile_list[pos] = offset;
+}
+
+void Forth::word_else() {
+    if (!state) {
+        throw std::runtime_error("ELSE ONLY IN COMPILATION");
+    }
+    int branch_xt = find_xt("BRANCH");
+    if (branch_xt < 0) {
+        define_primitive("BRANCH", [](Forth* f) { f->word_branch(); });
+        branch_xt = find_xt("BRANCH");
+    }
+    compile_list.push_back(static_cast<Cell>(branch_xt));
+    compile_list.push_back(0);
+    int pos2 = static_cast<int>(compile_list.size() - 1);
+    int pos1 = pop_ds();
+    if (pos1 < 0 || pos1 >= static_cast<int>(compile_list.size())) {
+        throw std::runtime_error("INVALID BRANCH TARGET");
+    }
+    Cell offset1 = static_cast<Cell>(pos2 + 1 - pos1);
+    compile_list[pos1] = offset1;
+    push_ds(static_cast<Cell>(pos2));
+}
+
 void Forth::init_primitives() {
     define_primitive("DUP", [](Forth* f) { f->word_dup(); });
     define_primitive("DROP", [](Forth* f) { f->word_drop(); });
@@ -1289,6 +1336,10 @@ void Forth::init_primitives() {
 
     define_primitive("BRANCH", [](Forth* f) { f->word_branch(); });
     define_primitive("0BRANCH", [](Forth* f) { f->word_zero_branch(); });
+
+    define_immediate("IF", [](Forth* f) { f->word_if(); });
+    define_immediate("THEN", [](Forth* f) { f->word_then(); });
+    define_immediate("ELSE", [](Forth* f) { f->word_else(); });
 }
 
 } // namespace pforth

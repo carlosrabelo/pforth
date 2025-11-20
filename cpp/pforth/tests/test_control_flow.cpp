@@ -88,3 +88,46 @@ TEST_CASE("Control Flow - Runtime branch execution (BRANCH, 0BRANCH)", "[control
     REQUIRE(f.ds[1] == 2);
     REQUIRE(f.ds[2] == 1);
 }
+
+TEST_CASE("Control Flow - Conditional branching compiler (IF, ELSE, THEN)", "[control_flow]") {
+    pforth::Forth f;
+
+    // IF ... THEN
+    f.interpret_line(": ABSVAL DUP 0< IF NEGATE THEN ;");
+    f.interpret_line("15 ABSVAL");
+    REQUIRE(f.pop_ds() == 15);
+    f.interpret_line("-15 ABSVAL");
+    REQUIRE(f.pop_ds() == 15);
+
+    // IF ... ELSE ... THEN
+    f.interpret_line(": SIGN DUP 0> IF DROP 1 ELSE DROP -1 THEN ;");
+    f.interpret_line("42 SIGN");
+    REQUIRE(f.pop_ds() == 1);
+    f.interpret_line("-42 SIGN");
+    REQUIRE(f.pop_ds() == -1);
+
+    // Nested IF ... ELSE ... THEN
+    f.interpret_line(": CLASSIFY DUP 0= IF DROP 0 ELSE DUP 0> IF DROP 1 ELSE DROP -1 THEN THEN ;");
+    f.interpret_line("0 CLASSIFY");
+    REQUIRE(f.pop_ds() == 0);
+    f.interpret_line("100 CLASSIFY");
+    REQUIRE(f.pop_ds() == 1);
+    f.interpret_line("-100 CLASSIFY");
+    REQUIRE(f.pop_ds() == -1);
+
+    // Recursive Factorial with IF / ELSE / THEN / RECURSE
+    f.interpret_line(": FACT DUP 2 < IF DROP 1 ELSE DUP 1- RECURSE * THEN ;");
+    f.interpret_line("0 FACT");
+    REQUIRE(f.pop_ds() == 1);
+    f.interpret_line("1 FACT");
+    REQUIRE(f.pop_ds() == 1);
+    f.interpret_line("5 FACT");
+    REQUIRE(f.pop_ds() == 120);
+    f.interpret_line("6 FACT");
+    REQUIRE(f.pop_ds() == 720);
+
+    // Error handling outside compilation state
+    REQUIRE_THROWS_WITH(f.interpret_line("IF"), "IF ONLY IN COMPILATION");
+    REQUIRE_THROWS_WITH(f.interpret_line("ELSE"), "ELSE ONLY IN COMPILATION");
+    REQUIRE_THROWS_WITH(f.interpret_line("THEN"), "THEN ONLY IN COMPILATION");
+}
