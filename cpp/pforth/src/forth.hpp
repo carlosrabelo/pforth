@@ -232,6 +232,13 @@ public:
     void word_then(); // THEN
     void word_else(); // ELSE
 
+    // Spec 007.3 Indefinite Loop Constructs
+    void word_begin();  // BEGIN
+    void word_until();  // UNTIL
+    void word_again();  // AGAIN
+    void word_while();  // WHILE
+    void word_repeat(); // REPEAT
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();
