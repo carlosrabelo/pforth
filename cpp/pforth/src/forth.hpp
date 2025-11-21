@@ -239,6 +239,19 @@ public:
     void word_while();  // WHILE
     void word_repeat(); // REPEAT
 
+    // Spec 007.4 Counted Loop Runtime and Compiler
+    void word_do_run();        // (DO)
+    void word_loop_run();      // (LOOP)
+    void word_plus_loop_run(); // (+LOOP)
+    void word_leave_run();     // (LEAVE)
+    void word_do();            // DO
+    void word_loop();          // LOOP
+    void word_plus_loop();     // +LOOP
+    void word_i();             // I
+    void word_j();             // J
+    void word_leave();         // LEAVE
+    void word_unloop();        // UNLOOP
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();

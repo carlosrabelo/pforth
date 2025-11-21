@@ -1292,6 +1292,126 @@ void Forth::word_repeat() {
     compile_list[orig] = forward;
 }
 
+void Forth::word_do_run() {
+    Cell start = pop_ds();
+    Cell limit = pop_ds();
+    push_rs(limit);
+    push_rs(start);
+}
+
+void Forth::word_loop_run() {
+    Cell index = pop_rs();
+    Cell limit = pop_rs();
+    index++;
+    if (index < limit) {
+        push_rs(limit);
+        push_rs(index);
+        if (ip < static_cast<int>(current_body.size())) {
+            int offset = current_body[ip];
+            ip += offset;
+        }
+    } else {
+        ip++;
+    }
+}
+
+void Forth::word_plus_loop_run() {
+    Cell step = pop_ds();
+    Cell index = pop_rs();
+    Cell limit = pop_rs();
+    index += step;
+    if ((step > 0 && index >= limit) || (step < 0 && index <= limit)) {
+        ip++;
+    } else {
+        push_rs(limit);
+        push_rs(index);
+        if (ip < static_cast<int>(current_body.size())) {
+            int offset = current_body[ip];
+            ip += offset;
+        }
+    }
+}
+
+void Forth::word_leave_run() {
+    if (rs.size() >= 2) {
+        rs.back() = rs[rs.size() - 2];
+    }
+}
+
+void Forth::word_do() {
+    if (!state) {
+        throw std::runtime_error("DO ONLY IN COMPILATION");
+    }
+    int xt = find_xt("(DO)");
+    if (xt < 0) {
+        define_primitive("(DO)", [](Forth* f) { f->word_do_run(); });
+        xt = find_xt("(DO)");
+    }
+    compile_list.push_back(static_cast<Cell>(xt));
+    push_ds(static_cast<Cell>(compile_list.size()));
+}
+
+void Forth::word_loop() {
+    if (!state) {
+        throw std::runtime_error("LOOP ONLY IN COMPILATION");
+    }
+    int dest = pop_ds();
+    int xt = find_xt("(LOOP)");
+    if (xt < 0) {
+        define_primitive("(LOOP)", [](Forth* f) { f->word_loop_run(); });
+        xt = find_xt("(LOOP)");
+    }
+    compile_list.push_back(static_cast<Cell>(xt));
+    Cell offset = static_cast<Cell>(dest - compile_list.size());
+    compile_list.push_back(offset);
+}
+
+void Forth::word_plus_loop() {
+    if (!state) {
+        throw std::runtime_error("+LOOP ONLY IN COMPILATION");
+    }
+    int dest = pop_ds();
+    int xt = find_xt("(+LOOP)");
+    if (xt < 0) {
+        define_primitive("(+LOOP)", [](Forth* f) { f->word_plus_loop_run(); });
+        xt = find_xt("(+LOOP)");
+    }
+    compile_list.push_back(static_cast<Cell>(xt));
+    Cell offset = static_cast<Cell>(dest - compile_list.size());
+    compile_list.push_back(offset);
+}
+
+void Forth::word_i() {
+    push_ds(peek_rs());
+}
+
+void Forth::word_j() {
+    if (rs.size() < 4) {
+        throw std::runtime_error("J: NOT ENOUGH LOOP LEVELS");
+    }
+    push_ds(rs[rs.size() - 3]);
+}
+
+void Forth::word_leave() {
+    if (!state) {
+        throw std::runtime_error("LEAVE ONLY IN COMPILATION");
+    }
+    int xt = find_xt("(LEAVE)");
+    if (xt < 0) {
+        define_primitive("(LEAVE)", [](Forth* f) { f->word_leave_run(); });
+        xt = find_xt("(LEAVE)");
+    }
+    compile_list.push_back(static_cast<Cell>(xt));
+}
+
+void Forth::word_unloop() {
+    if (rs.size() < 2) {
+        throw std::runtime_error("RETURN STACK UNDERFLOW");
+    }
+    pop_rs();
+    pop_rs();
+}
+
 void Forth::init_primitives() {
     define_primitive("DUP", [](Forth* f) { f->word_dup(); });
     define_primitive("DROP", [](Forth* f) { f->word_drop(); });
@@ -1420,6 +1540,19 @@ void Forth::init_primitives() {
     define_immediate("AGAIN", [](Forth* f) { f->word_again(); });
     define_immediate("WHILE", [](Forth* f) { f->word_while(); });
     define_immediate("REPEAT", [](Forth* f) { f->word_repeat(); });
+
+    define_primitive("(DO)", [](Forth* f) { f->word_do_run(); });
+    define_primitive("(LOOP)", [](Forth* f) { f->word_loop_run(); });
+    define_primitive("(+LOOP)", [](Forth* f) { f->word_plus_loop_run(); });
+    define_primitive("(LEAVE)", [](Forth* f) { f->word_leave_run(); });
+    define_primitive("I", [](Forth* f) { f->word_i(); });
+    define_primitive("J", [](Forth* f) { f->word_j(); });
+    define_primitive("UNLOOP", [](Forth* f) { f->word_unloop(); });
+
+    define_immediate("DO", [](Forth* f) { f->word_do(); });
+    define_immediate("LOOP", [](Forth* f) { f->word_loop(); });
+    define_immediate("+LOOP", [](Forth* f) { f->word_plus_loop(); });
+    define_immediate("LEAVE", [](Forth* f) { f->word_leave(); });
 }
 
 } // namespace pforth
