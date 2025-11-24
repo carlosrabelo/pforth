@@ -1471,6 +1471,89 @@ void Forth::word_page() {
     }
 }
 
+std::string Forth::parse_string() {
+    if (in_ptr < tib.size() && tib[in_ptr] == ' ') {
+        in_ptr++;
+    }
+    std::string s;
+    while (in_ptr < tib.size() && tib[in_ptr] != '"') {
+        s += tib[in_ptr++];
+    }
+    if (in_ptr < tib.size() && tib[in_ptr] == '"') {
+        in_ptr++;
+    }
+    return s;
+}
+
+void Forth::word_dot_string() {
+    std::string s = parse_string();
+    if (state) {
+        int addr = here();
+        for (size_t i = 0; i < s.size(); ++i) {
+            c_store(addr + i, static_cast<uint8_t>(s[i]));
+        }
+        allot(static_cast<int>(s.size()));
+
+        int lit_xt = find_xt("LIT");
+        if (lit_xt < 0) {
+            define_primitive("LIT", [](Forth* f) { f->word_lit(); });
+            lit_xt = find_xt("LIT");
+        }
+        compile_list.push_back(static_cast<Cell>(lit_xt));
+        compile_list.push_back(static_cast<Cell>(addr));
+        compile_list.push_back(static_cast<Cell>(lit_xt));
+        compile_list.push_back(static_cast<Cell>(s.size()));
+
+        int type_xt = find_xt("TYPE");
+        if (type_xt < 0) {
+            define_primitive("TYPE", [](Forth* f) { f->type(); });
+            type_xt = find_xt("TYPE");
+        }
+        compile_list.push_back(static_cast<Cell>(type_xt));
+    } else {
+        if (out) {
+            *out << s;
+        }
+    }
+}
+
+void Forth::word_s_string() {
+    std::string s = parse_string();
+    int addr = here();
+    for (size_t i = 0; i < s.size(); ++i) {
+        c_store(addr + i, static_cast<uint8_t>(s[i]));
+    }
+    allot(static_cast<int>(s.size()));
+
+    if (state) {
+        int lit_xt = find_xt("LIT");
+        if (lit_xt < 0) {
+            define_primitive("LIT", [](Forth* f) { f->word_lit(); });
+            lit_xt = find_xt("LIT");
+        }
+        compile_list.push_back(static_cast<Cell>(lit_xt));
+        compile_list.push_back(static_cast<Cell>(addr));
+        compile_list.push_back(static_cast<Cell>(lit_xt));
+        compile_list.push_back(static_cast<Cell>(s.size()));
+    } else {
+        push_ds(static_cast<Cell>(addr));
+        push_ds(static_cast<Cell>(s.size()));
+    }
+}
+
+void Forth::word_paren() {
+    while (in_ptr < tib.size() && tib[in_ptr] != ')') {
+        in_ptr++;
+    }
+    if (in_ptr < tib.size() && tib[in_ptr] == ')') {
+        in_ptr++;
+    }
+}
+
+void Forth::word_backslash() {
+    in_ptr = tib.size();
+}
+
 void Forth::init_primitives() {
     define_primitive("DUP", [](Forth* f) { f->word_dup(); });
     define_primitive("DROP", [](Forth* f) { f->word_drop(); });
@@ -1617,6 +1700,11 @@ void Forth::init_primitives() {
     define_primitive("U.", [](Forth* f) { f->word_u_dot(); });
     define_primitive(".S", [](Forth* f) { f->word_dot_s(); });
     define_primitive("PAGE", [](Forth* f) { f->word_page(); });
+
+    define_immediate(".\"", [](Forth* f) { f->word_dot_string(); });
+    define_immediate("S\"", [](Forth* f) { f->word_s_string(); });
+    define_immediate("(", [](Forth* f) { f->word_paren(); });
+    define_immediate("\\", [](Forth* f) { f->word_backslash(); });
 }
 
 } // namespace pforth
