@@ -1,0 +1,48 @@
+\ Block line editor (Forth). Uses host LOAD-FILE, SAVE-FILE, REST-OF-LINE, ERROR.
+
+1024 CONSTANT B/BUF
+16 CONSTANT #LINES
+64 CONSTANT /LINE
+
+CREATE BLOCK B/BUF ALLOT
+
+: LINE-ADDR ( n -- addr ) /LINE * BLOCK + ;
+
+: OPEN ( -- )
+  BLOCK B/BUF 32 FILL
+  BLOCK B/BUF LOAD-FILE DROP
+;
+
+: FLUSH ( -- )
+  BLOCK B/BUF SAVE-FILE
+;
+
+: BLANK? ( c -- f ) DUP 0= SWAP 32 = OR ;
+
+: LINE-VISIBLE ( addr -- addr len )
+  /LINE
+  BEGIN DUP WHILE
+    1-
+    2DUP + C@ BLANK? 0= IF 1+ EXIT THEN
+  REPEAT
+;
+
+: .# ( n -- )
+  DUP 10 < 0= IF DUP 10 / 48 + EMIT THEN
+  10 MOD 48 + EMIT
+;
+
+: LIST ( -- )
+  #LINES 0 DO
+    I .# ." : "
+    I LINE-ADDR LINE-VISIBLE TYPE CR
+  LOOP
+;
+
+: P ( line -- )
+  DUP 0 < OVER #LINES 1- > OR IF
+    DROP S" EDITOR LINE" ERROR
+  THEN
+  LINE-ADDR DUP /LINE 32 FILL
+  /LINE REST-OF-LINE DROP
+;
