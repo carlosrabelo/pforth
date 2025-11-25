@@ -1,5 +1,6 @@
 #include "catch.hpp"
 #include "forth.hpp"
+#include <fstream>
 #include <sstream>
 
 TEST_CASE("Advanced I/O - Numeric output and stack inspector (., U., .S, PAGE)", "[advanced_io]") {
@@ -103,4 +104,40 @@ TEST_CASE("Advanced I/O - String literals and output (.\", S\", comments)", "[ad
     f.interpret_line("50 50 + \\ trailing comment should ignore 999");
     REQUIRE(f.pop_ds() == 100);
     REQUIRE(f.ds.empty());
+}
+
+TEST_CASE("Advanced I/O - Dynamic evaluation and file inclusion (EVALUATE, INCLUDED, INCLUDE)", "[advanced_io]") {
+    std::ostringstream out;
+    std::istringstream in;
+    pforth::Forth f(&in, &out);
+
+    // EVALUATE string from DS
+    f.interpret_line("S\" 10 20 + 2*\" EVALUATE");
+    REQUIRE(f.pop_ds() == 60);
+
+    // Create a temporary file to test INCLUDED and INCLUDE
+    std::string test_path = "bin/test_eval.fs";
+    {
+        std::ofstream temp(test_path);
+        temp << "\\ test script\n";
+        temp << ": CUBE DUP DUP * * ;\n";
+        temp << "4 CUBE\n";
+    }
+
+    // INCLUDED via S" path" INCLUDED
+    f.interpret_line("S\" bin/test_eval.fs\" INCLUDED");
+    REQUIRE(f.pop_ds() == 64);
+
+    // Word CUBE was defined by file and remains in dictionary
+    f.interpret_line("3 CUBE");
+    REQUIRE(f.pop_ds() == 27);
+
+    // INCLUDE <path> token
+    f.interpret_line("INCLUDE bin/test_eval.fs");
+    REQUIRE(f.pop_ds() == 64);
+
+    // Non-existent file throws
+    REQUIRE_THROWS_WITH(f.interpret_line("INCLUDE nonexistent_file_xyz.fs"), "CANNOT OPEN: nonexistent_file_xyz.fs");
+
+    std::remove(test_path.c_str());
 }

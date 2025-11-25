@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace pforth {
@@ -54,6 +55,7 @@ public:
     std::vector<Word> words;
     std::unordered_map<std::string, int> words_by_name;
     int latest{-1};
+    std::unordered_set<std::string> loaded_modules;
 
     // Text Input Buffer & input cursor
     std::string tib;
@@ -264,6 +266,13 @@ public:
     void word_s_string();   // S"
     void word_paren();      // (
     void word_backslash();  // '\'
+
+    // Spec 008.3 String Evaluation and File Loading
+    void load_file(const std::string& path);
+    void require_module(const std::string& module_name);
+    void word_evaluate(); // EVALUATE
+    void word_included(); // INCLUDED
+    void word_include();  // INCLUDE
 
     // Spec 001.2 Console I/O Primitives
     void key();

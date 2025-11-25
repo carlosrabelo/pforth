@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cctype>
 #include <csignal>
+#include <fstream>
 
 namespace pforth {
 
@@ -1554,6 +1555,94 @@ void Forth::word_backslash() {
     in_ptr = tib.size();
 }
 
+void Forth::word_evaluate() {
+    Cell len = pop_ds();
+    Cell addr = pop_ds();
+    std::string saved_tib = tib;
+    size_t saved_in_ptr = in_ptr;
+
+    std::string code;
+    for (int i = 0; i < len; ++i) {
+        code += static_cast<char>(c_fetch(static_cast<uint16_t>(addr + i)));
+    }
+    tib = code;
+    in_ptr = 0;
+    try {
+        interpret_loop();
+    } catch (...) {
+        tib = saved_tib;
+        in_ptr = saved_in_ptr;
+        throw;
+    }
+    tib = saved_tib;
+    in_ptr = saved_in_ptr;
+}
+
+void Forth::load_file(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        throw std::runtime_error("CANNOT OPEN: " + path);
+    }
+    std::string saved_tib = tib;
+    size_t saved_in_ptr = in_ptr;
+
+    std::string line;
+    try {
+        while (std::getline(file, line)) {
+            check_interrupt();
+            std::string trimmed = line;
+            size_t start = trimmed.find_first_not_of(" \t\r\n");
+            if (start != std::string::npos) {
+                trimmed = trimmed.substr(start);
+            } else {
+                trimmed.clear();
+            }
+            if (trimmed.empty() || trimmed[0] == '\\') {
+                continue;
+            }
+            if (trimmed.rfind("#REQUIRE", 0) == 0) {
+                std::string mod_name = trimmed.substr(8);
+                size_t mstart = mod_name.find_first_not_of(" \t\r\n");
+                size_t mend = mod_name.find_last_not_of(" \t\r\n");
+                if (mstart != std::string::npos && mend != std::string::npos) {
+                    mod_name = mod_name.substr(mstart, mend - mstart + 1);
+                    require_module(mod_name);
+                }
+                continue;
+            }
+            interpret_line(line);
+        }
+    } catch (...) {
+        tib = saved_tib;
+        in_ptr = saved_in_ptr;
+        throw;
+    }
+    tib = saved_tib;
+    in_ptr = saved_in_ptr;
+}
+
+void Forth::word_included() {
+    Cell len = pop_ds();
+    Cell addr = pop_ds();
+    std::string path;
+    for (int i = 0; i < len; ++i) {
+        path += static_cast<char>(c_fetch(static_cast<uint16_t>(addr + i)));
+    }
+    load_file(path);
+}
+
+void Forth::word_include() {
+    std::string token;
+    if (!parse_word(token)) {
+        throw std::runtime_error("FILE NAME EXPECTED");
+    }
+    load_file(token);
+}
+
+void Forth::require_module(const std::string& module_name) {
+    (void)module_name;
+}
+
 void Forth::init_primitives() {
     define_primitive("DUP", [](Forth* f) { f->word_dup(); });
     define_primitive("DROP", [](Forth* f) { f->word_drop(); });
@@ -1705,6 +1794,10 @@ void Forth::init_primitives() {
     define_immediate("S\"", [](Forth* f) { f->word_s_string(); });
     define_immediate("(", [](Forth* f) { f->word_paren(); });
     define_immediate("\\", [](Forth* f) { f->word_backslash(); });
+
+    define_primitive("EVALUATE", [](Forth* f) { f->word_evaluate(); });
+    define_primitive("INCLUDED", [](Forth* f) { f->word_included(); });
+    define_primitive("INCLUDE", [](Forth* f) { f->word_include(); });
 }
 
 } // namespace pforth
