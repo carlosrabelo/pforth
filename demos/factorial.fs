@@ -1,0 +1,8 @@
+: FACTORIAL ( n -- n! )
+  DUP 1 >
+  IF
+    DUP 1 - RECURSE *
+  THEN
+;
+5 FACTORIAL . CR
+7 FACTORIAL . CR

@@ -1,0 +1,25 @@
+8190 CONSTANT SIZE
+VARIABLE FLAGS SIZE ALLOT
+: SETUP-FLAGS
+  SIZE 0 DO
+    1 FLAGS I + C!
+  LOOP ;
+: SIEVE
+  SETUP-FLAGS
+  0
+  SIZE 0 DO
+    FLAGS I + C@ IF
+      I I + 3 +
+      DUP I +
+      BEGIN
+        DUP SIZE <
+      WHILE
+        DUP FLAGS + 0 SWAP C!
+        OVER +
+      REPEAT
+      DROP DROP 1 +
+    THEN
+  LOOP
+  . CR
+;
+SIEVE
