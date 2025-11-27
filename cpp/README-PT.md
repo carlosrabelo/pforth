@@ -25,6 +25,10 @@ make quality         # Verificações de formatação quando clang-format estive
 make clean           # Remover artefactos de compilação
 ```
 
+## Bibliotecas
+
+`make test` define `PFORTH_LIB` para o diretório `pforth/` do repositório para o motor carregar `CORE` no arranque a frio.
+
 ## Licença
 
 Este projeto está licenciado sob a Licença MIT. Ver [LICENSE](../LICENSE).

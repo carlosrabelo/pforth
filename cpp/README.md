@@ -25,6 +25,10 @@ make quality         # Formatting checks when clang-format is available
 make clean           # Remove build artifacts
 ```
 
+## Libraries
+
+`make test` sets `PFORTH_LIB` to the repository `pforth/` directory so the engine can load `CORE` at cold start.
+
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](../LICENSE).
