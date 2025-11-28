@@ -1,6 +1,7 @@
 #include "forth.hpp"
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <csignal>
 #include <filesystem>
 #include <fstream>
@@ -24,6 +25,8 @@ Forth::Forth(std::istream* input, std::ostream* output)
     store_cell(1004, 10);
     init_primitives();
     require_module("CORE");
+    define_primitive("WORDS", [](Forth* f) { f->word_words(); });
+    define_primitive("DUMP", [](Forth* f) { f->word_dump(); });
 }
 
 Forth::~Forth() {
@@ -1760,6 +1763,73 @@ void Forth::word_require() {
         throw std::runtime_error("MODULE NAME EXPECTED");
     }
     require_module(token);
+}
+
+void Forth::word_words() {
+    if (!out) {
+        return;
+    }
+    bool first = true;
+    for (int i = static_cast<int>(words.size()) - 1; i >= 0; --i) {
+        if (!first) {
+            *out << ' ';
+        }
+        first = false;
+        if (words[i].immediate) {
+            *out << "I:";
+        }
+        *out << words[i].name;
+    }
+    *out << '\n';
+}
+
+void Forth::word_dump() {
+    Cell len = pop_ds();
+    Cell addr_cell = pop_ds();
+    if (len <= 0) {
+        return;
+    }
+    uint32_t addr = static_cast<uint16_t>(addr_cell);
+    int remaining = len;
+    bool overflow = false;
+    while (remaining > 0) {
+        if (addr >= memory.size()) {
+            overflow = true;
+            break;
+        }
+        int want = remaining < 16 ? remaining : 16;
+        int fit = want;
+        if (addr + static_cast<uint32_t>(want) > memory.size()) {
+            fit = static_cast<int>(memory.size() - addr);
+            overflow = true;
+        }
+        if (out) {
+            char text[8];
+            std::snprintf(text, sizeof(text), "%04X", addr);
+            *out << text << "  ";
+            for (int i = 0; i < fit; ++i) {
+                if (i > 0) {
+                    *out << ' ';
+                }
+                std::snprintf(text, sizeof(text), "%02X", memory[addr + static_cast<uint32_t>(i)]);
+                *out << text;
+            }
+            *out << "  ";
+            for (int i = 0; i < fit; ++i) {
+                uint8_t byte = memory[addr + static_cast<uint32_t>(i)];
+                *out << ((byte >= 32 && byte <= 126) ? static_cast<char>(byte) : '.');
+            }
+            *out << '\n';
+        }
+        addr += static_cast<uint32_t>(fit);
+        remaining -= fit;
+        if (overflow) {
+            break;
+        }
+    }
+    if (overflow) {
+        throw std::runtime_error("OUT OF MEMORY RANGE");
+    }
 }
 
 void Forth::init_primitives() {

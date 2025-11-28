@@ -278,6 +278,9 @@ public:
     // Spec 008.4 Module Dependency Resolver
     void word_require(); // #REQUIRE
 
+    void word_words(); // WORDS
+    void word_dump();  // DUMP
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();
