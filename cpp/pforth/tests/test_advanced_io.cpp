@@ -143,13 +143,17 @@ TEST_CASE("Advanced I/O - Dynamic evaluation and file inclusion (EVALUATE, INCLU
     std::remove(test_path.c_str());
 }
 
+
 TEST_CASE("Advanced I/O - Module dependency resolver (#REQUIRE)", "[advanced_io]") {
     std::ostringstream out;
     std::istringstream in;
     pforth::Forth f(&in, &out);
 
-    std::filesystem::create_directories("libs");
-    std::string mod_path = "libs/my_module.fs";
+    const char* saved_env = std::getenv("PFORTH_LIB");
+    const std::string saved_lib = saved_env ? saved_env : "";
+    const std::string lib_dir = "bin/test_pforth_lib";
+    std::filesystem::create_directories(lib_dir);
+    std::string mod_path = lib_dir + "/my_module.fs";
     {
         std::ofstream mod(mod_path);
         mod << "\\ my_module.fs\n";
@@ -157,6 +161,9 @@ TEST_CASE("Advanced I/O - Module dependency resolver (#REQUIRE)", "[advanced_io]
         mod << "1 LOAD_COUNT +!\n";
         mod << ": TRIPLE 3 * ;\n";
     }
+
+    // Modules resolve through $PFORTH_LIB first
+    setenv("PFORTH_LIB", lib_dir.c_str(), 1);
 
     // First #REQUIRE loads the module
     f.interpret_line("#REQUIRE my_module");
@@ -190,5 +197,10 @@ TEST_CASE("Advanced I/O - Module dependency resolver (#REQUIRE)", "[advanced_io]
     std::filesystem::remove(mod_path);
     std::filesystem::remove(req_file);
     std::error_code ec;
-    std::filesystem::remove("libs", ec);
+    std::filesystem::remove(lib_dir, ec);
+    if (saved_env) {
+        setenv("PFORTH_LIB", saved_lib.c_str(), 1);
+    } else {
+        unsetenv("PFORTH_LIB");
+    }
 }

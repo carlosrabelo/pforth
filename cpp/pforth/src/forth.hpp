@@ -56,6 +56,8 @@ public:
     std::unordered_map<std::string, int> words_by_name;
     int latest{-1};
     std::unordered_set<std::string> loaded_modules;
+    std::string last_save_path;
+    bool has_save_path{false};
 
     // Text Input Buffer & input cursor
     std::string tib;
@@ -274,6 +276,10 @@ public:
     void word_evaluate(); // EVALUATE
     void word_included(); // INCLUDED
     void word_include();  // INCLUDE
+    void word_load_file(); // LOAD-FILE ( addr maxlen -- n )
+    void word_save_file(); // SAVE-FILE ( addr len -- )
+    void word_rest_of_line(); // REST-OF-LINE ( addr maxlen -- n )
+    void word_error();        // ERROR ( addr len -- )
 
     // Spec 008.4 Module Dependency Resolver
     void word_require(); // #REQUIRE
@@ -289,6 +295,7 @@ public:
     void spaces();
     void type();
     void bye();
+    void word_running();
 
     // Spec 001.3 Line Reader and Text Input Buffer
     std::string read_line();

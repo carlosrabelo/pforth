@@ -3,6 +3,8 @@
 #include <cctype>
 #include <cstdio>
 #include <csignal>
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -585,6 +587,10 @@ void Forth::type() {
 
 void Forth::bye() {
     running = false;
+}
+
+void Forth::word_running() {
+    push_ds(running ? static_cast<Cell>(-1) : static_cast<Cell>(0));
 }
 
 std::string Forth::read_line() {
@@ -1652,7 +1658,80 @@ void Forth::word_include() {
     load_file(token);
 }
 
-static std::string find_lib_path(const std::string& name) {
+void Forth::word_load_file() {
+    std::string path;
+    if (!parse_word(path)) {
+        throw std::runtime_error("FILE NAME EXPECTED");
+    }
+    Cell maxlen = pop_ds();
+    uint32_t addr = static_cast<uint16_t>(pop_ds());
+    last_save_path = path;
+    has_save_path = true;
+    if (maxlen <= 0) {
+        push_ds(0);
+        return;
+    }
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("CANNOT OPEN: " + path);
+    }
+    size_t limit = std::min<size_t>(static_cast<size_t>(maxlen), memory.size() - addr);
+    file.read(reinterpret_cast<char*>(memory.data() + addr), static_cast<std::streamsize>(limit));
+    push_ds(static_cast<Cell>(file.gcount()));
+}
+
+void Forth::word_save_file() {
+    if (!has_save_path) {
+        throw std::runtime_error("EDITOR FILE");
+    }
+    Cell len = pop_ds();
+    uint32_t addr = static_cast<uint16_t>(pop_ds());
+    std::ofstream file(last_save_path, std::ios::binary | std::ios::trunc);
+    if (!file.is_open()) {
+        throw std::runtime_error("CANNOT OPEN: " + last_save_path);
+    }
+    if (len > 0) {
+        size_t n = std::min<size_t>(static_cast<size_t>(len), memory.size() - addr);
+        file.write(reinterpret_cast<const char*>(memory.data() + addr), static_cast<std::streamsize>(n));
+    }
+    file.flush();
+    if (!file) {
+        throw std::runtime_error("CANNOT OPEN: " + last_save_path);
+    }
+}
+
+void Forth::word_rest_of_line() {
+    Cell maxlen = pop_ds();
+    uint32_t addr = static_cast<uint16_t>(pop_ds());
+    while (in_ptr < tib.size() && tib[in_ptr] == ' ') {
+        ++in_ptr;
+    }
+    size_t start = std::min(in_ptr, tib.size());
+    size_t rest = tib.size() - start;
+    in_ptr = tib.size();
+    size_t n = 0;
+    if (maxlen > 0) {
+        n = std::min<size_t>(rest, static_cast<size_t>(maxlen));
+        n = std::min<size_t>(n, memory.size() - addr);
+    }
+    if (n > 0) {
+        std::memcpy(memory.data() + addr, tib.data() + start, n);
+    }
+    push_ds(static_cast<Cell>(n));
+}
+
+void Forth::word_error() {
+    Cell len = pop_ds();
+    uint32_t addr = static_cast<uint16_t>(pop_ds());
+    size_t n = 0;
+    if (len > 0) {
+        n = std::min<size_t>(static_cast<size_t>(len), memory.size() - addr);
+    }
+    std::string message(reinterpret_cast<const char*>(memory.data() + addr), n);
+    throw std::runtime_error(message);
+}
+
+static std::string lowercase_module_file(const std::string& name) {
     std::string lower;
     for (char c : name) {
         lower += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -1660,77 +1739,81 @@ static std::string find_lib_path(const std::string& name) {
     if (!lower.ends_with(".fs")) {
         lower += ".fs";
     }
+    return lower;
+}
 
+static std::string executable_dir() {
     std::error_code ec;
-    std::filesystem::path dir = std::filesystem::current_path(ec);
-    if (ec) {
+    std::filesystem::path exe = std::filesystem::read_symlink("/proc/self/exe", ec);
+    if (ec || exe.empty()) {
         return "";
     }
+    return exe.parent_path().string();
+}
 
-    std::vector<std::string> search_dirs = {"libs", "demos"};
-    while (true) {
-        for (const auto& sd : search_dirs) {
-            std::filesystem::path candidate = dir / sd / lower;
-            if (std::filesystem::exists(candidate, ec)) {
+static std::string find_lib_path(const std::string& name) {
+    const std::string file = lowercase_module_file(name);
+    std::error_code ec;
+
+    auto try_path = [&](const std::filesystem::path& candidate) -> bool {
+        return std::filesystem::is_regular_file(candidate, ec);
+    };
+
+    // 1. $PFORTH_LIB/<file>
+    if (const char* env = std::getenv("PFORTH_LIB"); env != nullptr && env[0] != '\0') {
+        std::filesystem::path candidate = std::filesystem::path(env) / file;
+        if (try_path(candidate)) {
+            return candidate.string();
+        }
+    }
+
+    // 2. ./pforth/<file> from cwd
+    std::filesystem::path cwd = std::filesystem::current_path(ec);
+    if (!ec) {
+        std::filesystem::path candidate = cwd / "pforth" / file;
+        if (try_path(candidate)) {
+            return candidate.string();
+        }
+    }
+
+    // 3. <exe_dir>/../pforth/<file>, then <exe_dir>/pforth/<file>
+    std::string exe_dir = executable_dir();
+    if (!exe_dir.empty()) {
+        std::filesystem::path base(exe_dir);
+        std::filesystem::path candidate = base / ".." / "pforth" / file;
+        if (try_path(candidate)) {
+            return candidate.lexically_normal().string();
+        }
+        candidate = base / "pforth" / file;
+        if (try_path(candidate)) {
+            return candidate.string();
+        }
+    }
+
+    // 4. /usr/share/pforth/<file>
+    {
+        std::filesystem::path candidate = std::filesystem::path("/usr/share/pforth") / file;
+        if (try_path(candidate)) {
+            return candidate.string();
+        }
+    }
+
+    // 5. Walk cwd parents for demos/<file>
+    if (!cwd.empty()) {
+        std::filesystem::path dir = cwd;
+        while (true) {
+            std::filesystem::path candidate = dir / "demos" / file;
+            if (try_path(candidate)) {
                 return candidate.string();
             }
+            if (!dir.has_parent_path() || dir.parent_path() == dir) {
+                break;
+            }
+            dir = dir.parent_path();
         }
-        if (!dir.has_parent_path() || dir.parent_path() == dir) {
-            break;
-        }
-        dir = dir.parent_path();
     }
     return "";
 }
-
-static const char* CORE_FS_SOURCE = R"(\ pForth core library
-\ composite words defined in Forth from kernel primitives
-
-\ Stack (depends only on kernel primitives)
-: NIP    SWAP DROP ;
-: TUCK   SWAP OVER ;
-: ROT    >R SWAP R> SWAP ;
-: -ROT   SWAP >R SWAP R> ;
-: 2DUP   OVER OVER ;
-: 2DROP  DROP DROP ;
-
-\ Division (depends on NIP, DROP from stack section)
-: /      /MOD NIP ;
-: MOD    /MOD DROP ;
-
-\ Comparison basics (depends on kernel primitives)
-: 0=     0 = ;
-: <>     = 0= ;
-: 0<>    0 <> ;
-: 0<     0 < ;
-: 0>     0 > ;
-: <=     OVER OVER < ROT ROT = OR ;
-: >=     OVER OVER > ROT ROT = OR ;
-
-\ Arithmetic compounds (depends on kernel primitives)
-: 1+     1 + ;
-: 1-     1 - ;
-: 2+     2 + ;
-: 2-     2 - ;
-: 2*     2 * ;
-: 2/     2 / ;
-: NEGATE 0 SWAP - ;
-: +!     TUCK @ + SWAP ! ;
-
-\ Extended arithmetic (depends on comparison and 2DUP above)
-: ABS    DUP 0< IF NEGATE THEN ;
-: MIN    2DUP < IF DROP ELSE SWAP DROP THEN ;
-: MAX    2DUP > IF DROP ELSE SWAP DROP THEN ;
-
-\ I/O (depends only on kernel primitives)
-: SPACE  32 EMIT ;
-: SPACES 0 MAX 0 DO SPACE LOOP ;
-: ?      @ . ;
-: PAGE   12 EMIT ;
-
-\ Misc
-: ERASE  0 FILL ;
-)";
 
 void Forth::require_module(const std::string& module_name) {
     std::string upper;
@@ -1742,19 +1825,11 @@ void Forth::require_module(const std::string& module_name) {
     }
 
     std::string path = find_lib_path(module_name);
-    if (!path.empty()) {
-        loaded_modules.insert(upper);
-        load_file(path);
-        return;
+    if (path.empty()) {
+        throw std::runtime_error("MODULE NOT FOUND: " + module_name);
     }
-
-    if (upper == "CORE") {
-        loaded_modules.insert(upper);
-        load_system(CORE_FS_SOURCE);
-        return;
-    }
-
-    throw std::runtime_error("MODULE NOT FOUND: " + module_name);
+    loaded_modules.insert(upper);
+    load_file(path);
 }
 
 void Forth::word_require() {
@@ -1880,6 +1955,7 @@ void Forth::init_primitives() {
     define_primitive("U.", [](Forth* f) { f->word_u_dot(); });
     define_primitive(".S", [](Forth* f) { f->word_dot_s(); });
     define_primitive("BYE", [](Forth* f) { f->bye(); });
+    define_primitive("RUNNING", [](Forth* f) { f->word_running(); });
     define_primitive("EXPECT", [](Forth* f) { f->expect(); });
     define_primitive("SPAN", [](Forth* f) { f->span(); });
     define_primitive("QUIT", [](Forth* f) { f->quit(); });
@@ -1954,6 +2030,10 @@ void Forth::init_primitives() {
     define_primitive("EVALUATE", [](Forth* f) { f->word_evaluate(); });
     define_primitive("INCLUDED", [](Forth* f) { f->word_included(); });
     define_primitive("INCLUDE", [](Forth* f) { f->word_include(); });
+    // define_primitive("LOAD-FILE", [](Forth* f) { f->word_load_file(); });
+    // define_primitive("SAVE-FILE", [](Forth* f) { f->word_save_file(); });
+    // define_primitive("REST-OF-LINE", [](Forth* f) { f->word_rest_of_line(); });
+    // define_primitive("ERROR", [](Forth* f) { f->word_error(); });
     define_primitive("#REQUIRE", [](Forth* f) { f->word_require(); });
 }
 
