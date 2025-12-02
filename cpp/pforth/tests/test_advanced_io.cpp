@@ -143,6 +143,44 @@ TEST_CASE("Advanced I/O - Dynamic evaluation and file inclusion (EVALUATE, INCLU
     std::remove(test_path.c_str());
 }
 
+TEST_CASE("Advanced I/O - LOAD-FILE and SAVE-FILE", "[advanced_io]") {
+    std::ostringstream out;
+    std::istringstream in;
+    pforth::Forth f(&in, &out);
+    const std::string path = "bin/test_load_save.txt";
+    {
+        std::ofstream temp(path, std::ios::binary);
+        temp << "hello";
+    }
+
+    REQUIRE_THROWS_WITH(f.interpret_line("0 0 SAVE-FILE"), "EDITOR FILE");
+    f.ds.clear();
+    REQUIRE_THROWS_WITH(f.interpret_line("2000 100 LOAD-FILE"), "FILE NAME EXPECTED");
+    f.ds.clear();
+
+    f.interpret_line("2000 100 LOAD-FILE " + path);
+    REQUIRE(f.pop_ds() == 5);
+    REQUIRE(f.memory[2000] == 'h');
+    REQUIRE(f.memory[2004] == 'o');
+
+    f.interpret_line("2000 3 LOAD-FILE " + path);
+    REQUIRE(f.pop_ds() == 3);
+
+    f.memory[3000] = 'o';
+    f.memory[3001] = 'k';
+    f.interpret_line("3000 2 SAVE-FILE");
+    {
+        std::ifstream check(path, std::ios::binary);
+        std::string content((std::istreambuf_iterator<char>(check)), std::istreambuf_iterator<char>());
+        REQUIRE(content == "ok");
+    }
+    f.interpret_line("3000 0 SAVE-FILE");
+    REQUIRE(std::filesystem::file_size(path) == 0);
+
+    REQUIRE_THROWS_WITH(f.interpret_line("2000 10 LOAD-FILE bin/nonexistent_xyz.txt"),
+                        "CANNOT OPEN: bin/nonexistent_xyz.txt");
+    std::remove(path.c_str());
+}
 
 TEST_CASE("Advanced I/O - Module dependency resolver (#REQUIRE)", "[advanced_io]") {
     std::ostringstream out;
