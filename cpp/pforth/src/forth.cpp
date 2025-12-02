@@ -2032,8 +2032,8 @@ void Forth::init_primitives() {
     define_primitive("INCLUDE", [](Forth* f) { f->word_include(); });
     define_primitive("LOAD-FILE", [](Forth* f) { f->word_load_file(); });
     define_primitive("SAVE-FILE", [](Forth* f) { f->word_save_file(); });
-    // define_primitive("REST-OF-LINE", [](Forth* f) { f->word_rest_of_line(); });
-    // define_primitive("ERROR", [](Forth* f) { f->word_error(); });
+    define_primitive("REST-OF-LINE", [](Forth* f) { f->word_rest_of_line(); });
+    define_primitive("ERROR", [](Forth* f) { f->word_error(); });
     define_primitive("#REQUIRE", [](Forth* f) { f->word_require(); });
 }
 
