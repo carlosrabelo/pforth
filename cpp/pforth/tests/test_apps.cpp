@@ -99,3 +99,45 @@ TEST_CASE("Block editor library", "[apps][editor]") {
     std::filesystem::remove(path, ec);
 }
 
+TEST_CASE("Text adventure library", "[apps][adventure]") {
+    bool running = true;
+    bool has_module = false;
+    const std::string out = play_script("NORTH\nEAST\n", &running, &has_module);
+    REQUIRE(out ==
+            "You are in a small room.\n"
+            "Exits: NORTH\n"
+            "> NORTH\n"
+            "You are in a hall.\n"
+            "Exits: SOUTH EAST\n"
+            "> EAST\n"
+            "You found the key.\n"
+            "> ");
+    REQUIRE_FALSE(running);
+    REQUIRE(has_module);
+}
+
+TEST_CASE("Text adventure library - wander script", "[apps][adventure]") {
+    const std::string out = play_script("west\n north \nNORTH\nSOUTH\nEAST\n", nullptr, nullptr);
+    REQUIRE(out ==
+            "You are in a small room.\n"
+            "Exits: NORTH\n"
+            "> west\n"
+            "Can't go that way.\n"
+            "You are in a small room.\n"
+            "Exits: NORTH\n"
+            ">  north \n"
+            "You are in a hall.\n"
+            "Exits: SOUTH EAST\n"
+            "> NORTH\n"
+            "Can't go that way.\n"
+            "You are in a hall.\n"
+            "Exits: SOUTH EAST\n"
+            "> SOUTH\n"
+            "You are in a small room.\n"
+            "Exits: NORTH\n"
+            "> EAST\n"
+            "Can't go that way.\n"
+            "You are in a small room.\n"
+            "Exits: NORTH\n"
+            "> ");
+}
