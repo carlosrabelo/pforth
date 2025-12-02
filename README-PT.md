@@ -14,6 +14,12 @@ make setup
 make build
 ```
 
+## Estrutura
+
+- `cpp/` — porta C++20
+- `pforth/` — bibliotecas Forth partilhadas
+- `demos/` — programas de demonstração
+
 ## Desenvolvimento
 
 ```bash

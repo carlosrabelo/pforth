@@ -14,6 +14,12 @@ make setup
 make build
 ```
 
+## Layout
+
+- `cpp/` — C++20 port
+- `pforth/` — shared Forth libraries
+- `demos/` — demonstration programs
+
 ## Development
 
 ```bash
