@@ -16,7 +16,8 @@ make build
 
 ## Layout
 
-- `cpp/` — C++20 port
+- `cpp/`
+- `go/` — Go port — C++20 port
 - `pforth/` — shared Forth libraries
 - `demos/` — demonstration programs
 
