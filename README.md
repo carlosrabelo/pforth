@@ -6,6 +6,7 @@ Deterministic 16-bit Forth interpreter and compiler.
 
 - **Make** — GNU Make 4.0+
 - **GCC / Clang** — C++20 for the `cpp/` component
+- **Go 1.24+** — for the `go/` component
 
 ## Installation
 
@@ -16,8 +17,8 @@ make build
 
 ## Layout
 
-- `cpp/`
-- `go/` — Go port — C++20 port
+- `cpp/` — C++20 port
+- `go/` — Go port
 - `pforth/` — shared Forth libraries
 - `demos/` — demonstration programs
 

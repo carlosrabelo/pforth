@@ -6,6 +6,7 @@ Interpretador e compilador Forth determinístico de 16 bits.
 
 - **Make** — GNU Make 4.0+
 - **GCC / Clang** — C++20 para o componente `cpp/`
+- **Go 1.24+** — para o componente `go/`
 
 ## Instalação
 
@@ -16,8 +17,8 @@ make build
 
 ## Estrutura
 
-- `cpp/`
-- `go/` — porta Go — porta C++20
+- `cpp/` — porta C++20
+- `go/` — porta Go
 - `pforth/` — bibliotecas Forth partilhadas
 - `demos/` — programas de demonstração
 
