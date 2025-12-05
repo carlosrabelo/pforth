@@ -259,3 +259,70 @@ func TestAbort(t *testing.T) {
 		t.Fatal("Abort did not reset all state")
 	}
 }
+
+func TestStacksAndDepth(t *testing.T) {
+	in := &bytes.Buffer{}
+	out := &bytes.Buffer{}
+	f := New(in, out)
+
+	// DEPTH initially 0
+	f.WordDepth()
+	if f.DSPop() != 0 {
+		t.Fatal("expected depth 0 initially")
+	}
+
+	// Data Stack operations
+	f.DSPush(10)
+	f.DSPush(20)
+	f.DSPush(30)
+	if f.DSPeek() != 30 {
+		t.Fatalf("expected DSPeek 30, got %d", f.DSPeek())
+	}
+	f.WordDepth()
+	if f.DSPop() != 3 {
+		t.Fatalf("expected depth 3, got %d", f.DSPeek())
+	}
+	if f.DSPop() != 30 || f.DSPop() != 20 || f.DSPop() != 10 {
+		t.Fatal("DS LIFO order violation")
+	}
+
+	// DS Peek underflow
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected DSPeek to panic on empty stack")
+			}
+		}()
+		f.DSPeek()
+	}()
+
+	// Return Stack operations
+	f.RSPush(100)
+	f.RSPush(200)
+	if f.RSPeek() != 200 {
+		t.Fatalf("expected RSPeek 200, got %d", f.RSPeek())
+	}
+	if f.RSPop() != 200 || f.RSPop() != 100 {
+		t.Fatal("RS LIFO order violation")
+	}
+
+	// RS Pop underflow
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected RSPop to panic on empty stack")
+			}
+		}()
+		f.RSPop()
+	}()
+
+	// RS Peek underflow
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected RSPeek to panic on empty stack")
+			}
+		}()
+		f.RSPeek()
+	}()
+}

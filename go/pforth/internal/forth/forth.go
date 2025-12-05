@@ -112,6 +112,11 @@ func (f *Forth) RSPeek() Cell {
 	return f.RS[len(f.RS)-1]
 }
 
+// WordDepth pushes the current depth of the data stack onto the data stack.
+func (f *Forth) WordDepth() {
+	f.DSPush(Cell(len(f.DS)))
+}
+
 // CFetch reads a byte from 64KB memory.
 func (f *Forth) CFetch(addr int) byte {
 	if addr < 0 || addr >= len(f.Memory) {
