@@ -190,3 +190,72 @@ func TestReadLineAndTIB(t *testing.T) {
 		t.Fatalf("SetLine failed, TIB=%q, IN=%d", string(f.TIB), f.IN)
 	}
 }
+
+func TestREPLPromptAndQUIT(t *testing.T) {
+	in := strings.NewReader("line1\nline2\n")
+	out := &bytes.Buffer{}
+	f := New(in, out)
+
+	f.QUIT()
+
+	outStr := out.String()
+	if !strings.Contains(outStr, " ok\n") {
+		t.Fatalf("expected REPL prompt ' ok\\n', got %q", outStr)
+	}
+	if f.Running {
+		t.Fatal("expected Running to be false after EOF")
+	}
+}
+
+func TestInterruptRecovery(t *testing.T) {
+	in := strings.NewReader("infinite_loop_line\n")
+	out := &bytes.Buffer{}
+	f := New(in, out)
+
+	f.DSPush(100)
+	f.DSPush(200)
+	f.RSPush(300)
+
+	// Simulate SIGINT
+	f.Interrupted = 1
+
+	f.replStep()
+
+	// Stacks should be aborted/cleared
+	if len(f.DS) != 0 {
+		t.Fatalf("expected data stack to be cleared on interrupt, got %d items", len(f.DS))
+	}
+	if len(f.RS) != 0 {
+		t.Fatalf("expected return stack to be cleared on interrupt, got %d items", len(f.RS))
+	}
+
+	outStr := out.String()
+	if !strings.Contains(outStr, "INTERRUPTED") {
+		t.Fatalf("expected 'INTERRUPTED' message, got %q", outStr)
+	}
+	if !strings.Contains(outStr, " ok\n") {
+		t.Fatalf("expected ' ok\\n' prompt after interrupt, got %q", outStr)
+	}
+
+	// Engine should NOT be crashed or terminated
+	if !f.Running {
+		t.Fatal("SIGINT must not terminate the interpreter process")
+	}
+}
+
+func TestAbort(t *testing.T) {
+	in := &bytes.Buffer{}
+	out := &bytes.Buffer{}
+	f := New(in, out)
+
+	f.DSPush(42)
+	f.RSPush(99)
+	f.State = true
+	f.Interrupted = 1
+
+	f.Abort()
+
+	if len(f.DS) != 0 || len(f.RS) != 0 || f.State || f.Interrupted != 0 {
+		t.Fatal("Abort did not reset all state")
+	}
+}
