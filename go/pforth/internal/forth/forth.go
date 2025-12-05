@@ -8,6 +8,12 @@ import (
 	"strings"
 )
 
+const (
+	SpanAddr = 1000
+	DPAddr   = 1002
+	BaseAddr = 1004
+)
+
 // Forth represents the Forth interpreter and virtual machine state.
 type Forth struct {
 	DS          []Cell
@@ -17,6 +23,10 @@ type Forth struct {
 	wordsByName map[string]int
 	Latest      int
 	DP          int
+	Base        int
+
+	TIB []byte
+	IN  int
 
 	Input   io.Reader
 	Output  io.Writer
@@ -37,12 +47,18 @@ func New(input io.Reader, output io.Writer) *Forth {
 		wordsByName: make(map[string]int),
 		Latest:      -1,
 		DP:          1024,
+		Base:        10,
+		TIB:         make([]byte, 0, 256),
+		IN:          0,
 		Input:       input,
 		Output:      output,
 		bufIn:       bufio.NewReader(input),
 		Running:     true,
 		Loaded:      make(map[string]bool),
 	}
+	f.Store(SpanAddr, 0)
+	f.Store(DPAddr, 1024)
+	f.Store(BaseAddr, 10)
 	return f
 }
 
@@ -106,6 +122,81 @@ func (f *Forth) CStore(addr int, val byte) {
 		forthError("MEMORY ACCESS OUT OF BOUNDS: %d", addr)
 	}
 	f.Memory[addr] = val
+}
+
+// Fetch reads a 16-bit cell (little-endian) from memory.
+func (f *Forth) Fetch(addr int) Cell {
+	if addr < 0 || addr+1 >= len(f.Memory) {
+		forthError("FETCH ADDR OUT OF RANGE: %d", addr)
+	}
+	return Cell(int(f.Memory[addr]) | int(f.Memory[addr+1])<<8)
+}
+
+// Store writes a 16-bit cell (little-endian) to memory.
+func (f *Forth) Store(addr int, val Cell) {
+	if addr < 0 || addr+1 >= len(f.Memory) {
+		forthError("STORE ADDR OUT OF RANGE: %d", addr)
+	}
+	f.Memory[addr] = byte(val & 0xFF)
+	f.Memory[addr+1] = byte((val >> 8) & 0xFF)
+}
+
+// WordSpan pushes the address of the SPAN system variable onto the stack.
+func (f *Forth) WordSpan() {
+	f.DSPush(Cell(SpanAddr))
+}
+
+// WordExpect reads up to maxlen characters into memory at addr, updating SPAN.
+func (f *Forth) WordExpect() {
+	maxlen := int(f.DSPop())
+	addr := int(f.DSPop())
+	if maxlen <= 0 {
+		f.Store(SpanAddr, 0)
+		return
+	}
+	count := 0
+	for count < maxlen {
+		b, err := f.bufIn.ReadByte()
+		if err != nil {
+			break
+		}
+		if b == '\r' {
+			next, err := f.bufIn.Peek(1)
+			if err == nil && len(next) > 0 && next[0] == '\n' {
+				f.bufIn.ReadByte()
+			}
+			break
+		}
+		if b == '\n' {
+			break
+		}
+		f.CStore(addr+count, b)
+		count++
+	}
+	f.Store(SpanAddr, Cell(count))
+}
+
+// ReadLine reads a line from the input stream, trimming line terminators.
+func (f *Forth) ReadLine() (string, error) {
+	if f.bufIn == nil {
+		return "", io.EOF
+	}
+	line, err := f.bufIn.ReadString('\n')
+	if err != nil {
+		if len(line) > 0 {
+			line = strings.TrimRight(line, "\r\n")
+			return line, nil
+		}
+		return "", err
+	}
+	line = strings.TrimRight(line, "\r\n")
+	return line, nil
+}
+
+// SetLine sets the TIB and resets the input pointer IN to 0.
+func (f *Forth) SetLine(line string) {
+	f.TIB = []byte(line)
+	f.IN = 0
 }
 
 // Key reads a single byte from input stream.
