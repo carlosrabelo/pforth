@@ -326,3 +326,65 @@ func TestStacksAndDepth(t *testing.T) {
 		f.RSPeek()
 	}()
 }
+
+func TestMemoryModelAndEndianness(t *testing.T) {
+	in := &bytes.Buffer{}
+	out := &bytes.Buffer{}
+	f := New(in, out)
+
+	if len(f.Memory) != 65536 {
+		t.Fatalf("expected 65536 bytes of memory, got %d", len(f.Memory))
+	}
+
+	// Little-endian verification
+	f.Store(2000, 0x1234)
+	if f.Memory[2000] != 0x34 || f.Memory[2001] != 0x12 {
+		t.Fatalf("expected little-endian bytes [0x34, 0x12], got [0x%x, 0x%x]", f.Memory[2000], f.Memory[2001])
+	}
+	if f.Fetch(2000) != 0x1234 {
+		t.Fatalf("expected Fetch to return 0x1234, got 0x%x", f.Fetch(2000))
+	}
+
+	// Negative cell value round-trip
+	f.Store(2002, -1)
+	if f.Memory[2002] != 0xFF || f.Memory[2003] != 0xFF {
+		t.Fatalf("expected -1 bytes [0xFF, 0xFF], got [0x%x, 0x%x]", f.Memory[2002], f.Memory[2003])
+	}
+	if f.Fetch(2002) != -1 {
+		t.Fatalf("expected Fetch to return -1, got %d", f.Fetch(2002))
+	}
+
+	// Single byte access
+	f.CStore(2004, 0xAB)
+	if f.CFetch(2004) != 0xAB {
+		t.Fatalf("expected CFetch to return 0xAB, got 0x%x", f.CFetch(2004))
+	}
+
+	// Boundary access (last valid 16-bit cell at 65534)
+	f.Store(65534, -42)
+	if f.Fetch(65534) != -42 {
+		t.Fatalf("expected Fetch at 65534 to return -42, got %d", f.Fetch(65534))
+	}
+
+	// Bounds checks panics
+	checkPanic := func(name string, fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatalf("expected panic for out of bounds %s", name)
+			}
+		}()
+		fn()
+	}
+
+	checkPanic("CFetch(-1)", func() { f.CFetch(-1) })
+	checkPanic("CFetch(65536)", func() { f.CFetch(65536) })
+	checkPanic("CStore(-1)", func() { f.CStore(-1, 0) })
+	checkPanic("CStore(65536)", func() { f.CStore(65536, 0) })
+
+	checkPanic("Fetch(-1)", func() { f.Fetch(-1) })
+	checkPanic("Fetch(65535)", func() { f.Fetch(65535) })
+	checkPanic("Fetch(65536)", func() { f.Fetch(65536) })
+	checkPanic("Store(-1)", func() { f.Store(-1, 0) })
+	checkPanic("Store(65535)", func() { f.Store(65535, 0) })
+	checkPanic("Store(65536)", func() { f.Store(65536, 0) })
+}

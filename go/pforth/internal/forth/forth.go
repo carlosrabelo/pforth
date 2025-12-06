@@ -138,7 +138,8 @@ func (f *Forth) Fetch(addr int) Cell {
 	if addr < 0 || addr+1 >= len(f.Memory) {
 		forthError("FETCH ADDR OUT OF RANGE: %d", addr)
 	}
-	return Cell(int(f.Memory[addr]) | int(f.Memory[addr+1])<<8)
+	u := uint16(f.Memory[addr]) | uint16(f.Memory[addr+1])<<8
+	return Cell(int16(u))
 }
 
 // Store writes a 16-bit cell (little-endian) to memory.
@@ -146,8 +147,9 @@ func (f *Forth) Store(addr int, val Cell) {
 	if addr < 0 || addr+1 >= len(f.Memory) {
 		forthError("STORE ADDR OUT OF RANGE: %d", addr)
 	}
-	f.Memory[addr] = byte(val & 0xFF)
-	f.Memory[addr+1] = byte((val >> 8) & 0xFF)
+	u := uint16(val)
+	f.Memory[addr] = byte(u & 0xFF)
+	f.Memory[addr+1] = byte((u >> 8) & 0xFF)
 }
 
 // WordSpan pushes the address of the SPAN system variable onto the stack.
