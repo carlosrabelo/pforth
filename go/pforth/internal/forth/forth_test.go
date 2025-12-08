@@ -388,3 +388,81 @@ func TestMemoryModelAndEndianness(t *testing.T) {
 	checkPanic("Store(65535)", func() { f.Store(65535, 0) })
 	checkPanic("Store(65536)", func() { f.Store(65536, 0) })
 }
+
+func TestCellAndByteAccessPrimitives(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+
+	// ! and @
+	f.DSPush(0x5678)
+	f.DSPush(2000)
+	f.WordStore()
+	if f.Fetch(2000) != 0x5678 {
+		t.Fatalf("WordStore failed, got 0x%x", f.Fetch(2000))
+	}
+
+	f.DSPush(2000)
+	f.WordFetch()
+	if len(f.DS) != 1 || f.DSPop() != 0x5678 {
+		t.Fatal("WordFetch failed")
+	}
+
+	// C! and C@
+	f.DSPush(0x7F)
+	f.DSPush(2100)
+	f.WordCStore()
+	if f.CFetch(2100) != 0x7F {
+		t.Fatalf("WordCStore failed, got 0x%x", f.CFetch(2100))
+	}
+
+	f.DSPush(2100)
+	f.WordCFetch()
+	if len(f.DS) != 1 || f.DSPop() != 0x7F {
+		t.Fatal("WordCFetch failed")
+	}
+
+	// +!
+	f.Store(2200, 100)
+	f.DSPush(25)
+	f.DSPush(2200)
+	f.WordPlusStore()
+	if f.Fetch(2200) != 125 {
+		t.Fatalf("+! failed: expected 125, got %d", f.Fetch(2200))
+	}
+
+	f.DSPush(-50)
+	f.DSPush(2200)
+	f.WordPlusStore()
+	if f.Fetch(2200) != 75 {
+		t.Fatalf("+! with negative failed: expected 75, got %d", f.Fetch(2200))
+	}
+
+	// ?
+	f.Store(2300, 4321)
+	f.DSPush(2300)
+	f.WordQuestion()
+	if out.String() != "4321 " {
+		t.Fatalf("? failed: expected '4321 ', got %q", out.String())
+	}
+	out.Reset()
+
+	// Underflow tests
+	underflow := func(fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected underflow panic")
+			}
+		}()
+		fn()
+	}
+
+	underflow(func() { f.WordFetch() })
+	underflow(func() { f.WordStore() })
+	underflow(func() { f.DSPush(1); f.WordStore() })
+	underflow(func() { f.WordCFetch() })
+	underflow(func() { f.WordCStore() })
+	underflow(func() { f.DSPush(1); f.WordCStore() })
+	underflow(func() { f.WordPlusStore() })
+	underflow(func() { f.DSPush(1); f.WordPlusStore() })
+	underflow(func() { f.WordQuestion() })
+}
