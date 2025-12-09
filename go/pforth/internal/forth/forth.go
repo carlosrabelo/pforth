@@ -144,6 +144,50 @@ func (f *Forth) WordOver() {
 	f.DSPush(a)
 }
 
+// WordQDup duplicates top of stack only if non-zero: ?DUP ( n -- 0 | n n )
+func (f *Forth) WordQDup() {
+	v := f.DSPeek()
+	if v != 0 {
+		f.DSPush(v)
+	}
+}
+
+// WordRot rotates third item to top of stack: ROT ( a b c -- b c a )
+func (f *Forth) WordRot() {
+	c := f.DSPop()
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(b)
+	f.DSPush(c)
+	f.DSPush(a)
+}
+
+// WordNRot rotates top item to third position: -ROT ( a b c -- c a b )
+func (f *Forth) WordNRot() {
+	c := f.DSPop()
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(c)
+	f.DSPush(a)
+	f.DSPush(b)
+}
+
+// WordNip drops second item: NIP ( a b -- b )
+func (f *Forth) WordNip() {
+	b := f.DSPop()
+	_ = f.DSPop()
+	f.DSPush(b)
+}
+
+// WordTuck duplicates top item under second item: TUCK ( a b -- b a b )
+func (f *Forth) WordTuck() {
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(b)
+	f.DSPush(a)
+	f.DSPush(b)
+}
+
 // CFetch reads a byte from 64KB memory.
 func (f *Forth) CFetch(addr int) byte {
 	if addr < 0 || addr >= len(f.Memory) {

@@ -607,3 +607,78 @@ func TestBasicStackManipulationWords(t *testing.T) {
 	underflow(func() { f.WordOver() })
 	underflow(func() { f.DSPush(1); f.WordOver() })
 }
+
+func TestExtendedSingleStackManipulationWords(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+
+	// ?DUP non-zero
+	f.DSPush(42)
+	f.WordQDup()
+	if len(f.DS) != 2 || f.DSPop() != 42 || f.DSPop() != 42 {
+		t.Fatal("?DUP non-zero failed")
+	}
+
+	// ?DUP zero
+	f.DSPush(0)
+	f.WordQDup()
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatal("?DUP zero failed")
+	}
+
+	// ROT ( a b c -- b c a )
+	f.DSPush(1)
+	f.DSPush(2)
+	f.DSPush(3)
+	f.WordRot()
+	if len(f.DS) != 3 || f.DSPop() != 1 || f.DSPop() != 3 || f.DSPop() != 2 {
+		t.Fatal("ROT failed")
+	}
+
+	// -ROT ( a b c -- c a b )
+	f.DSPush(1)
+	f.DSPush(2)
+	f.DSPush(3)
+	f.WordNRot()
+	if len(f.DS) != 3 || f.DSPop() != 2 || f.DSPop() != 1 || f.DSPop() != 3 {
+		t.Fatal("-ROT failed")
+	}
+
+	// NIP ( a b -- b )
+	f.DSPush(10)
+	f.DSPush(20)
+	f.WordNip()
+	if len(f.DS) != 1 || f.DSPop() != 20 {
+		t.Fatal("NIP failed")
+	}
+
+	// TUCK ( a b -- b a b )
+	f.DSPush(10)
+	f.DSPush(20)
+	f.WordTuck()
+	if len(f.DS) != 3 || f.DSPop() != 20 || f.DSPop() != 10 || f.DSPop() != 20 {
+		t.Fatal("TUCK failed")
+	}
+
+	// Underflow tests
+	underflow := func(fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected underflow panic")
+			}
+		}()
+		fn()
+	}
+
+	underflow(func() { f.WordQDup() })
+	underflow(func() { f.WordRot() })
+	underflow(func() { f.DSPush(1); f.WordRot() })
+	underflow(func() { f.DSPush(1); f.DSPush(2); f.WordRot() })
+	underflow(func() { f.WordNRot() })
+	underflow(func() { f.DSPush(1); f.WordNRot() })
+	underflow(func() { f.DSPush(1); f.DSPush(2); f.WordNRot() })
+	underflow(func() { f.WordNip() })
+	underflow(func() { f.DSPush(1); f.WordNip() })
+	underflow(func() { f.WordTuck() })
+	underflow(func() { f.DSPush(1); f.WordTuck() })
+}
