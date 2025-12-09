@@ -554,3 +554,56 @@ func TestMemoryBlockOperations(t *testing.T) {
 	underflow(func() { f.DSPush(1); f.WordCMoveGreater() })
 	underflow(func() { f.DSPush(1); f.DSPush(1); f.WordCMoveGreater() })
 }
+
+func TestBasicStackManipulationWords(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+
+	// DUP ( n -- n n )
+	f.DSPush(42)
+	f.WordDup()
+	if len(f.DS) != 2 || f.DSPop() != 42 || f.DSPop() != 42 {
+		t.Fatal("DUP failed")
+	}
+
+	// DROP ( n -- )
+	f.DSPush(10)
+	f.DSPush(20)
+	f.WordDrop()
+	if len(f.DS) != 1 || f.DSPop() != 10 {
+		t.Fatal("DROP failed")
+	}
+
+	// SWAP ( a b -- b a )
+	f.DSPush(1)
+	f.DSPush(2)
+	f.WordSwap()
+	if len(f.DS) != 2 || f.DSPop() != 1 || f.DSPop() != 2 {
+		t.Fatal("SWAP failed")
+	}
+
+	// OVER ( a b -- a b a )
+	f.DSPush(1)
+	f.DSPush(2)
+	f.WordOver()
+	if len(f.DS) != 3 || f.DSPop() != 1 || f.DSPop() != 2 || f.DSPop() != 1 {
+		t.Fatal("OVER failed")
+	}
+
+	// Underflow tests
+	underflow := func(fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected underflow panic")
+			}
+		}()
+		fn()
+	}
+
+	underflow(func() { f.WordDup() })
+	underflow(func() { f.WordDrop() })
+	underflow(func() { f.WordSwap() })
+	underflow(func() { f.DSPush(1); f.WordSwap() })
+	underflow(func() { f.WordOver() })
+	underflow(func() { f.DSPush(1); f.WordOver() })
+}
