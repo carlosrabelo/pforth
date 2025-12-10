@@ -248,6 +248,64 @@ func (f *Forth) WordRFetch() {
 	f.DSPush(val)
 }
 
+// WordPlus pops a and b, pushing sum: + ( a b -- sum )
+func (f *Forth) WordPlus() {
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(a + b)
+}
+
+// WordMinus pops a and b, pushing diff: - ( a b -- diff )
+func (f *Forth) WordMinus() {
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(a - b)
+}
+
+// WordMultiply pops a and b, pushing prod: * ( a b -- prod )
+func (f *Forth) WordMultiply() {
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(a * b)
+}
+
+// WordSlashMod pops a and b, pushing remainder then quotient: /MOD ( a b -- rem quot )
+func (f *Forth) WordSlashMod() {
+	b := f.DSPop()
+	a := f.DSPop()
+	if b == 0 {
+		forthError("DIVISION BY ZERO")
+	}
+	f.DSPush(a % b)
+	f.DSPush(a / b)
+}
+
+// WordSlash pops a and b, pushing quotient: / ( a b -- quot )
+func (f *Forth) WordSlash() {
+	b := f.DSPop()
+	a := f.DSPop()
+	if b == 0 {
+		forthError("DIVISION BY ZERO")
+	}
+	f.DSPush(a / b)
+}
+
+// WordMod pops a and b, pushing remainder: MOD ( a b -- rem )
+func (f *Forth) WordMod() {
+	b := f.DSPop()
+	a := f.DSPop()
+	if b == 0 {
+		forthError("DIVISION BY ZERO")
+	}
+	f.DSPush(a % b)
+}
+
+// WordNegate pops n, pushing two's complement negation: NEGATE ( n -- -n )
+func (f *Forth) WordNegate() {
+	n := f.DSPop()
+	f.DSPush(-n)
+}
+
 // CFetch reads a byte from 64KB memory.
 func (f *Forth) CFetch(addr int) byte {
 	if addr < 0 || addr >= len(f.Memory) {
