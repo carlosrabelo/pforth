@@ -749,3 +749,46 @@ func TestDoubleCellStackManipulationWords(t *testing.T) {
 	underflow(func() { f.DSPush(1); f.DSPush(2); f.Word2Over() })
 	underflow(func() { f.DSPush(1); f.DSPush(2); f.DSPush(3); f.Word2Over() })
 }
+
+func TestReturnStackTransferWords(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+
+	// >R ( n -- ) ( R: -- n )
+	f.DSPush(99)
+	f.WordToR()
+	if len(f.DS) != 0 || len(f.RS) != 1 || f.RSPeek() != 99 {
+		t.Fatal(">R failed")
+	}
+
+	// R@ ( -- n ) ( R: n -- n )
+	f.WordRFetch()
+	if len(f.DS) != 1 || f.DSPeek() != 99 || len(f.RS) != 1 || f.RSPeek() != 99 {
+		t.Fatal("R@ failed")
+	}
+
+	// R> ( -- n ) ( R: n -- )
+	f.WordRFrom()
+	if len(f.RS) != 0 || len(f.DS) != 2 || f.DSPop() != 99 || f.DSPop() != 99 {
+		t.Fatal("R> failed")
+	}
+
+	// Underflow checks
+	underflow := func(expectedMsg string, fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatalf("expected underflow panic with message %q", expectedMsg)
+			} else {
+				fe, ok := r.(*ForthError)
+				if !ok || fe.Message != expectedMsg {
+					t.Fatalf("expected %q, got %v", expectedMsg, r)
+				}
+			}
+		}()
+		fn()
+	}
+
+	underflow("DATA STACK UNDERFLOW", func() { f.WordToR() })
+	underflow("RETURN STACK UNDERFLOW", func() { f.WordRFrom() })
+	underflow("RETURN STACK UNDERFLOW", func() { f.WordRFetch() })
+}
