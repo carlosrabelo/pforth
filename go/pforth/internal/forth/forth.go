@@ -374,6 +374,33 @@ func (f *Forth) WordMax() {
 	}
 }
 
+// WordAnd pops a and b, pushing bitwise AND: AND ( a b -- c )
+func (f *Forth) WordAnd() {
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(a & b)
+}
+
+// WordOr pops a and b, pushing bitwise OR: OR ( a b -- c )
+func (f *Forth) WordOr() {
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(a | b)
+}
+
+// WordXor pops a and b, pushing bitwise XOR: XOR ( a b -- c )
+func (f *Forth) WordXor() {
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(a ^ b)
+}
+
+// WordInvert pops n, pushing one's complement: INVERT ( n -- ~n )
+func (f *Forth) WordInvert() {
+	n := f.DSPop()
+	f.DSPush(^n)
+}
+
 // CFetch reads a byte from 64KB memory.
 func (f *Forth) CFetch(addr int) byte {
 	if addr < 0 || addr >= len(f.Memory) {
