@@ -1092,3 +1092,234 @@ func TestBitwiseLogicPrimitives(t *testing.T) {
 	underflow(func() { f.DSPush(1); f.WordXor() })
 	underflow(func() { f.WordInvert() })
 }
+
+func TestComparisonAndEqualityPrimitives(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+
+	// =
+	f.DSPush(10)
+	f.DSPush(10)
+	f.WordEquals()
+	if len(f.DS) != 1 || f.DSPop() != -1 {
+		t.Fatal("= true failed")
+	}
+	f.DSPush(10)
+	f.DSPush(20)
+	f.WordEquals()
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatal("= false failed")
+	}
+
+	// <>
+	f.DSPush(10)
+	f.DSPush(20)
+	f.WordNotEquals()
+	if len(f.DS) != 1 || f.DSPop() != -1 {
+		t.Fatal("<> true failed")
+	}
+	f.DSPush(10)
+	f.DSPush(10)
+	f.WordNotEquals()
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatal("<> false failed")
+	}
+
+	// <
+	f.DSPush(5)
+	f.DSPush(10)
+	f.WordLess()
+	if len(f.DS) != 1 || f.DSPop() != -1 {
+		t.Fatal("< true failed")
+	}
+	f.DSPush(10)
+	f.DSPush(5)
+	f.WordLess()
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatal("< false failed")
+	}
+	f.DSPush(-5)
+	f.DSPush(5)
+	f.WordLess()
+	if len(f.DS) != 1 || f.DSPop() != -1 {
+		t.Fatal("< signed negative failed")
+	}
+
+	// >
+	f.DSPush(10)
+	f.DSPush(5)
+	f.WordGreater()
+	if len(f.DS) != 1 || f.DSPop() != -1 {
+		t.Fatal("> true failed")
+	}
+	f.DSPush(5)
+	f.DSPush(10)
+	f.WordGreater()
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatal("> false failed")
+	}
+
+	// <=
+	f.DSPush(5)
+	f.DSPush(10)
+	f.WordLessEqual()
+	if len(f.DS) != 1 || f.DSPop() != -1 {
+		t.Fatal("<= less failed")
+	}
+	f.DSPush(10)
+	f.DSPush(10)
+	f.WordLessEqual()
+	if len(f.DS) != 1 || f.DSPop() != -1 {
+		t.Fatal("<= equal failed")
+	}
+	f.DSPush(10)
+	f.DSPush(5)
+	f.WordLessEqual()
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatal("<= false failed")
+	}
+
+	// >=
+	f.DSPush(10)
+	f.DSPush(5)
+	f.WordGreaterEqual()
+	if len(f.DS) != 1 || f.DSPop() != -1 {
+		t.Fatal(">= greater failed")
+	}
+	f.DSPush(10)
+	f.DSPush(10)
+	f.WordGreaterEqual()
+	if len(f.DS) != 1 || f.DSPop() != -1 {
+		t.Fatal(">= equal failed")
+	}
+	f.DSPush(5)
+	f.DSPush(10)
+	f.WordGreaterEqual()
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatal(">= false failed")
+	}
+
+	// 0=
+	f.DSPush(0)
+	f.WordZeroEquals()
+	if len(f.DS) != 1 || f.DSPop() != -1 {
+		t.Fatal("0= true failed")
+	}
+	f.DSPush(5)
+	f.WordZeroEquals()
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatal("0= false failed")
+	}
+
+	// 0<>
+	f.DSPush(5)
+	f.WordZeroNotEquals()
+	if len(f.DS) != 1 || f.DSPop() != -1 {
+		t.Fatal("0<> true failed")
+	}
+	f.DSPush(0)
+	f.WordZeroNotEquals()
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatal("0<> false failed")
+	}
+
+	// 0<
+	f.DSPush(-5)
+	f.WordZeroLess()
+	if len(f.DS) != 1 || f.DSPop() != -1 {
+		t.Fatal("0< true failed")
+	}
+	f.DSPush(5)
+	f.WordZeroLess()
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatal("0< false failed")
+	}
+
+	// 0>
+	f.DSPush(5)
+	f.WordZeroGreater()
+	if len(f.DS) != 1 || f.DSPop() != -1 {
+		t.Fatal("0> true failed")
+	}
+	f.DSPush(-5)
+	f.WordZeroGreater()
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatal("0> false failed")
+	}
+
+	// U<, U>, U<=, U>=
+	// -1 signed is 65535 unsigned
+	f.DSPush(-1)
+	f.DSPush(1)
+	f.WordULess()
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatal("U< unsigned check failed")
+	}
+	f.DSPush(-1)
+	f.DSPush(1)
+	f.WordUGreater()
+	if len(f.DS) != 1 || f.DSPop() != -1 {
+		t.Fatal("U> unsigned check failed")
+	}
+
+	f.DSPush(10)
+	f.DSPush(10)
+	f.WordULessEqual()
+	if len(f.DS) != 1 || f.DSPop() != -1 {
+		t.Fatal("U<= equal failed")
+	}
+	f.DSPush(20)
+	f.DSPush(10)
+	f.WordULessEqual()
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatal("U<= false failed")
+	}
+
+	f.DSPush(10)
+	f.DSPush(10)
+	f.WordUGreaterEqual()
+	if len(f.DS) != 1 || f.DSPop() != -1 {
+		t.Fatal("U>= equal failed")
+	}
+	f.DSPush(5)
+	f.DSPush(10)
+	f.WordUGreaterEqual()
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatal("U>= false failed")
+	}
+
+	// Underflow tests
+	underflow := func(fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected underflow panic")
+			}
+		}()
+		fn()
+	}
+
+	underflow(func() { f.WordEquals() })
+	underflow(func() { f.DSPush(1); f.WordEquals() })
+	underflow(func() { f.WordNotEquals() })
+	underflow(func() { f.DSPush(1); f.WordNotEquals() })
+	underflow(func() { f.WordLess() })
+	underflow(func() { f.DSPush(1); f.WordLess() })
+	underflow(func() { f.WordGreater() })
+	underflow(func() { f.DSPush(1); f.WordGreater() })
+	underflow(func() { f.WordLessEqual() })
+	underflow(func() { f.DSPush(1); f.WordLessEqual() })
+	underflow(func() { f.WordGreaterEqual() })
+	underflow(func() { f.DSPush(1); f.WordGreaterEqual() })
+	underflow(func() { f.WordZeroEquals() })
+	underflow(func() { f.WordZeroNotEquals() })
+	underflow(func() { f.WordZeroLess() })
+	underflow(func() { f.WordZeroGreater() })
+	underflow(func() { f.WordULess() })
+	underflow(func() { f.DSPush(1); f.WordULess() })
+	underflow(func() { f.WordUGreater() })
+	underflow(func() { f.DSPush(1); f.WordUGreater() })
+	underflow(func() { f.WordULessEqual() })
+	underflow(func() { f.DSPush(1); f.WordULessEqual() })
+	underflow(func() { f.WordUGreaterEqual() })
+	underflow(func() { f.DSPush(1); f.WordUGreaterEqual() })
+}
