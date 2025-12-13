@@ -502,6 +502,125 @@ func (f *Forth) WordUGreaterEqual() {
 	f.DSPush(boolCell(a >= b))
 }
 
+// DefineWord creates a new dictionary entry.
+func (f *Forth) DefineWord(name string, wtype WordType, code XTCode, body []Cell, immediate bool) *Word {
+	upper := strings.ToUpper(name)
+	idx := len(f.Words)
+	w := &Word{
+		Name:      upper,
+		Immediate: immediate,
+		Type:      wtype,
+		Code:      code,
+		Body:      body,
+		PFA:       f.DP,
+	}
+	f.Words = append(f.Words, w)
+	f.wordsByName[upper] = idx
+	f.Latest = idx
+	return w
+}
+
+// DefinePrimitive creates a native primitive word.
+func (f *Forth) DefinePrimitive(name string, code XTCode) *Word {
+	return f.DefineWord(name, WordPrimitive, code, nil, false)
+}
+
+// DefineImmediate creates an immediate native primitive word.
+func (f *Forth) DefineImmediate(name string, code XTCode) *Word {
+	return f.DefineWord(name, WordPrimitive, code, nil, true)
+}
+
+// LatestWord returns the most recently defined dictionary word or nil.
+func (f *Forth) LatestWord() *Word {
+	if f.Latest < 0 || f.Latest >= len(f.Words) {
+		return nil
+	}
+	return f.Words[f.Latest]
+}
+
+// Lookup finds a word by name (case-insensitive).
+func (f *Forth) Lookup(name string) (*Word, bool) {
+	upper := strings.ToUpper(name)
+	idx, ok := f.wordsByName[upper]
+	if !ok || idx < 0 || idx >= len(f.Words) {
+		return nil, false
+	}
+	return f.Words[idx], true
+}
+
+// FindXT returns the XT (integer index) of a word by name (case-insensitive).
+func (f *Forth) FindXT(name string) (int, bool) {
+	upper := strings.ToUpper(name)
+	idx, ok := f.wordsByName[upper]
+	if !ok || idx < 0 || idx >= len(f.Words) {
+		return -1, false
+	}
+	return idx, true
+}
+
+// ParseWord parses the next whitespace-delimited word from TIB starting at IN.
+func (f *Forth) ParseWord() (string, bool) {
+	for f.IN < len(f.TIB) && (f.TIB[f.IN] == ' ' || f.TIB[f.IN] == '\t' || f.TIB[f.IN] == '\r' || f.TIB[f.IN] == '\n') {
+		f.IN++
+	}
+	if f.IN >= len(f.TIB) {
+		return "", false
+	}
+	start := f.IN
+	for f.IN < len(f.TIB) && f.TIB[f.IN] != ' ' && f.TIB[f.IN] != '\t' && f.TIB[f.IN] != '\r' && f.TIB[f.IN] != '\n' {
+		f.IN++
+	}
+	return string(f.TIB[start:f.IN]), true
+}
+
+// WordFind looks up a counted string name in the dictionary: FIND ( addr -- xt flag )
+func (f *Forth) WordFind() {
+	addr := int(f.DSPop())
+	length := int(f.CFetch(addr))
+	nameBytes := make([]byte, length)
+	for i := 0; i < length; i++ {
+		nameBytes[i] = f.CFetch(addr + 1 + i)
+	}
+	name := strings.ToUpper(string(nameBytes))
+	w, ok := f.Lookup(name)
+	if !ok {
+		f.DSPush(Cell(addr))
+		f.DSPush(0)
+		return
+	}
+	xt, _ := f.FindXT(name)
+	f.DSPush(Cell(xt))
+	if w.Immediate {
+		f.DSPush(1)
+	} else {
+		f.DSPush(-1)
+	}
+}
+
+// WordTick parses the next word name from input and pushes its XT: ' ( -- xt )
+func (f *Forth) WordTick() {
+	token, ok := f.ParseWord()
+	if !ok {
+		forthError("WORD NAME EXPECTED")
+	}
+	upper := strings.ToUpper(token)
+	xt, ok := f.FindXT(upper)
+	if !ok {
+		forthError("WORD NOT FOUND: %s", token)
+	}
+	f.DSPush(Cell(xt))
+}
+
+// WordToBody converts XT to its parameter field address (PFA): >BODY ( xt -- pfa )
+func (f *Forth) WordToBody() {
+	xt := int(f.DSPop())
+	if xt >= 0 && xt < len(f.Words) && f.Words[xt].PFA != 0 {
+		f.DSPush(Cell(f.Words[xt].PFA))
+	} else {
+		f.DSPush(Cell(xt + 2))
+	}
+}
+
 // CFetch reads a byte from 64KB memory.
 func (f *Forth) CFetch(addr int) byte {
 	if addr < 0 || addr >= len(f.Memory) {
