@@ -621,6 +621,63 @@ func (f *Forth) WordToBody() {
 	}
 }
 
+// Here returns current dictionary pointer address (value of DP variable).
+func (f *Forth) Here() int {
+	return int(f.Fetch(DPAddr))
+}
+
+// Allot advances the dictionary pointer by n bytes.
+func (f *Forth) Allot(n int) {
+	cur := f.Here()
+	f.Store(DPAddr, Cell(cur+n))
+	f.DP = cur + n
+}
+
+// Comma stores 16-bit cell at HERE and allots 2 bytes.
+func (f *Forth) Comma(val Cell) {
+	f.Store(f.Here(), val)
+	f.Allot(2)
+}
+
+// CComma stores byte at HERE and allots 1 byte.
+func (f *Forth) CComma(val byte) {
+	f.CStore(f.Here(), val)
+	f.Allot(1)
+}
+
+// WordDP pushes the address of the DP system variable onto the stack: DP ( -- addr )
+func (f *Forth) WordDP() {
+	f.DSPush(Cell(DPAddr))
+}
+
+// WordHere pushes the current dictionary pointer value onto the stack: HERE ( -- addr )
+func (f *Forth) WordHere() {
+	f.DSPush(Cell(f.Here()))
+}
+
+// WordPAD pushes temporary buffer address (HERE + 68) onto the stack: PAD ( -- addr )
+func (f *Forth) WordPAD() {
+	f.DSPush(Cell(f.Here() + 68))
+}
+
+// WordAllot advances the dictionary pointer by n bytes: ALLOT ( n -- )
+func (f *Forth) WordAllot() {
+	n := int(f.DSPop())
+	f.Allot(n)
+}
+
+// WordComma compiles 16-bit cell at HERE and advances DP by 2: , ( n -- )
+func (f *Forth) WordComma() {
+	val := f.DSPop()
+	f.Comma(val)
+}
+
+// WordCComma compiles byte at HERE and advances DP by 1: C, ( c -- )
+func (f *Forth) WordCComma() {
+	val := byte(f.DSPop() & 0xFF)
+	f.CComma(val)
+}
+
 // CFetch reads a byte from 64KB memory.
 func (f *Forth) CFetch(addr int) byte {
 	if addr < 0 || addr >= len(f.Memory) {
