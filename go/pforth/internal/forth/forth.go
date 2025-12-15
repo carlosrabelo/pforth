@@ -678,6 +678,37 @@ func (f *Forth) WordCComma() {
 	f.CComma(val)
 }
 
+// WordExecute pops execution token and executes the word: EXECUTE ( xt -- )
+func (f *Forth) WordExecute() {
+	xt := int(f.DSPop())
+	f.ExecuteWord(xt)
+}
+
+// ExecuteWord executes a dictionary word by its XT index.
+func (f *Forth) ExecuteWord(xt int) {
+	if xt < 0 || xt >= len(f.Words) {
+		forthError("INVALID EXECUTION TOKEN: %d", xt)
+	}
+	w := f.Words[xt]
+	switch w.Type {
+	case WordPrimitive:
+		if w.Code != nil {
+			w.Code(f)
+		}
+	case WordConstant:
+		if len(w.Body) > 0 {
+			f.DSPush(w.Body[0])
+		}
+	case WordVariable, WordCreate:
+		f.DSPush(Cell(w.PFA))
+	case WordColon:
+		for ip := 0; ip < len(w.Body); ip++ {
+			f.CheckInterrupt()
+			f.ExecuteWord(int(w.Body[ip]))
+		}
+	}
+}
+
 // CFetch reads a byte from 64KB memory.
 func (f *Forth) CFetch(addr int) byte {
 	if addr < 0 || addr >= len(f.Memory) {
