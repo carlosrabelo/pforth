@@ -1511,3 +1511,75 @@ func TestDictionaryMemoryAllocationPointers(t *testing.T) {
 	underflow(func() { f.WordComma() })
 	underflow(func() { f.WordCComma() })
 }
+
+func TestExecutionTokenDispatcher(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+
+	// Primitive word execution
+	called := false
+	wPrim := f.DefinePrimitive("TESTPRIM", func(f *Forth) {
+		called = true
+		f.DSPush(777)
+	})
+	xtPrim, _ := f.FindXT("TESTPRIM")
+	f.DSPush(Cell(xtPrim))
+	f.WordExecute()
+	if !called || len(f.DS) != 1 || f.DSPop() != 777 {
+		t.Fatal("ExecuteWord primitive failed")
+	}
+
+	// Constant word execution
+	wConst := f.DefineWord("TESTCONST", WordConstant, nil, []Cell{1234}, false)
+	xtConst, _ := f.FindXT("TESTCONST")
+	f.DSPush(Cell(xtConst))
+	f.WordExecute()
+	if len(f.DS) != 1 || f.DSPop() != 1234 {
+		t.Fatal("ExecuteWord constant failed")
+	}
+	_ = wConst
+
+	// Variable word execution
+	wVar := f.DefineWord("TESTVAR", WordVariable, nil, nil, false)
+	wVar.PFA = 2048
+	xtVar, _ := f.FindXT("TESTVAR")
+	f.DSPush(Cell(xtVar))
+	f.WordExecute()
+	if len(f.DS) != 1 || f.DSPop() != 2048 {
+		t.Fatal("ExecuteWord variable failed")
+	}
+
+	// Create word execution
+	wCreate := f.DefineWord("TESTCREATE", WordCreate, nil, nil, false)
+	wCreate.PFA = 3050
+	xtCreate, _ := f.FindXT("TESTCREATE")
+	f.DSPush(Cell(xtCreate))
+	f.WordExecute()
+	if len(f.DS) != 1 || f.DSPop() != 3050 {
+		t.Fatal("ExecuteWord create failed")
+	}
+
+	// Invalid XT panic
+	invalidXT := func(xt Cell) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatalf("expected panic on invalid XT %d", xt)
+			}
+		}()
+		f.DSPush(xt)
+		f.WordExecute()
+	}
+	invalidXT(-1)
+	invalidXT(9999)
+
+	// Underflow
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected underflow panic on WordExecute")
+			}
+		}()
+		f.WordExecute()
+	}()
+	_ = wPrim
+}
