@@ -29,6 +29,12 @@ type Forth struct {
 	Base        int
 	State       bool
 
+	CompileName string
+	CompileList []Cell
+	CompileWord *Word
+	CurrentBody []Cell
+	IP          int
+
 	TIB []byte
 	IN  int
 
@@ -49,6 +55,8 @@ func New(input io.Reader, output io.Writer) *Forth {
 		Memory:      make([]byte, 65536),
 		Words:       make([]*Word, 0, 128),
 		wordsByName: make(map[string]int),
+		CompileList: make([]Cell, 0, 64),
+		CurrentBody: make([]Cell, 0, 64),
 		Latest:      -1,
 		DP:          1024,
 		Base:        10,
@@ -702,10 +710,28 @@ func (f *Forth) ExecuteWord(xt int) {
 	case WordVariable, WordCreate:
 		f.DSPush(Cell(w.PFA))
 	case WordColon:
-		for ip := 0; ip < len(w.Body); ip++ {
+		savedBody := f.CurrentBody
+		savedIP := f.IP
+		f.CurrentBody = w.Body
+		f.IP = 0
+		defer func() {
+			f.CurrentBody = savedBody
+			f.IP = savedIP
+		}()
+		for f.IP < len(f.CurrentBody) {
 			f.CheckInterrupt()
-			f.ExecuteWord(int(w.Body[ip]))
+			nxt := int(f.CurrentBody[f.IP])
+			f.IP++
+			f.ExecuteWord(nxt)
 		}
+	}
+}
+
+// WordLIT pushes the inline literal cell following it and advances IP: LIT ( -- n )
+func (f *Forth) WordLIT() {
+	if f.IP < len(f.CurrentBody) {
+		f.DSPush(f.CurrentBody[f.IP])
+		f.IP++
 	}
 }
 
@@ -1115,6 +1141,7 @@ func (f *Forth) LoadSystem(data string) {
 		if line == "" || strings.HasPrefix(line, "\\") {
 			continue
 		}
+		f.InterpretLine(line)
 	}
 }
 
@@ -1131,6 +1158,7 @@ func (f *Forth) Abort() {
 	f.State = false
 	f.DS = f.DS[:0]
 	f.RS = f.RS[:0]
+	f.CompileList = f.CompileList[:0]
 	f.IN = len(f.TIB)
 }
 
@@ -1143,9 +1171,64 @@ func (f *Forth) CheckInterrupt() {
 	}
 }
 
+// InterpretLoop processes tokens sequentially from TIB until end of line.
+func (f *Forth) InterpretLoop() {
+	for {
+		f.CheckInterrupt()
+		token, ok := f.ParseWord()
+		if !ok {
+			break
+		}
+		upper := strings.ToUpper(token)
+		w, found := f.Lookup(upper)
+		if found {
+			xt, _ := f.FindXT(upper)
+			if f.State && !w.Immediate {
+				f.CompileList = append(f.CompileList, Cell(xt))
+			} else {
+				f.ExecuteWord(xt)
+			}
+		} else {
+			num, isNum := f.ParseNumber(token)
+			if isNum {
+				if f.State {
+					litXT, ok := f.FindXT("LIT")
+					if !ok {
+						f.DefinePrimitive("LIT", func(f *Forth) { f.WordLIT() })
+						litXT, _ = f.FindXT("LIT")
+					}
+					f.CompileList = append(f.CompileList, Cell(litXT), num)
+				} else {
+					f.DSPush(num)
+				}
+			} else {
+				errToken := token
+				f.Abort()
+				forthError("UNKNOWN WORD: %s", errToken)
+			}
+		}
+	}
+}
+
+// WordInterpret executes the interpreter loop on the current TIB buffer: INTERPRET ( -- )
+func (f *Forth) WordInterpret() {
+	f.InterpretLoop()
+}
+
+// WordAbort clears data stack, resets compilation state, and discards input: ABORT ( -- )
+func (f *Forth) WordAbort() {
+	f.Abort()
+}
+
+// WordQuit resets return stack and runs outer interpreter: QUIT ( -- )
+func (f *Forth) WordQuit() {
+	f.QUIT()
+}
+
 // InterpretLine sets the line into TIB and executes it.
 func (f *Forth) InterpretLine(line string) {
 	f.SetLine(line)
+	f.WordInterpret()
 }
 
 // replStep reads and processes a single line in the REPL.
