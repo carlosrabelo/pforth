@@ -740,6 +740,130 @@ func (f *Forth) WordVariable() {
 	f.Comma(0)
 }
 
+// GetBase returns current numeric base from BaseAddr (defaults to 10 if <= 0).
+func (f *Forth) GetBase() int {
+	b := int(f.Fetch(BaseAddr))
+	if b <= 0 {
+		return 10
+	}
+	return b
+}
+
+// SetBase sets current numeric base in BaseAddr and updates f.Base.
+func (f *Forth) SetBase(b int) {
+	f.Store(BaseAddr, Cell(b))
+	f.Base = b
+}
+
+// ParseNumber parses a string token into a 16-bit cell according to current BASE or prefixes ($ for hex, % for binary).
+func (f *Forth) ParseNumber(token string) (Cell, bool) {
+	if len(token) == 0 {
+		return 0, false
+	}
+	curBase := f.GetBase()
+	neg := false
+	start := 0
+	if token[0] == '-' {
+		neg = true
+		start = 1
+	} else if token[0] == '+' {
+		start = 1
+	}
+	if start >= len(token) {
+		return 0, false
+	}
+
+	parsedBase := curBase
+	if token[start] == '$' {
+		parsedBase = 16
+		start++
+	} else if token[start] == '%' {
+		parsedBase = 2
+		start++
+	} else if token[start] == '#' {
+		start++
+		if start < len(token) && token[start] == '#' {
+			start++
+		}
+	}
+	if start >= len(token) {
+		return 0, false
+	}
+
+	var val uint32
+	for i := start; i < len(token); i++ {
+		c := token[i]
+		digit := -1
+		if c >= '0' && c <= '9' {
+			digit = int(c - '0')
+		} else if c >= 'A' && c <= 'F' {
+			digit = int(c - 'A' + 10)
+		} else if c >= 'a' && c <= 'f' {
+			digit = int(c - 'a' + 10)
+		} else {
+			return 0, false
+		}
+		if digit >= parsedBase {
+			return 0, false
+		}
+		val = val*uint32(parsedBase) + uint32(digit)
+	}
+
+	result := Cell(int16(uint16(val & 0xFFFF)))
+	if neg {
+		return -result, true
+	}
+	return result, true
+}
+
+// WordWord parses next token up to delim, storing counted string at HERE: WORD ( delim -- addr )
+func (f *Forth) WordWord() {
+	delimCell := f.DSPop()
+	delim := byte(delimCell & 0xFF)
+	for f.IN < len(f.TIB) && f.TIB[f.IN] == delim {
+		f.IN++
+	}
+	dest := f.Here()
+	if f.IN >= len(f.TIB) {
+		f.CStore(dest, 0)
+		f.DSPush(Cell(dest))
+		return
+	}
+	start := dest + 1
+	count := 0
+	for f.IN < len(f.TIB) && f.TIB[f.IN] != delim && f.TIB[f.IN] != '\r' && f.TIB[f.IN] != '\n' {
+		f.CStore(start+count, f.TIB[f.IN])
+		count++
+		f.IN++
+	}
+	f.CStore(dest, byte(count))
+	f.CStore(start+count, ' ')
+	f.DSPush(Cell(dest))
+}
+
+// WordNumber converts counted string at addr to number: NUMBER ( addr -- n flag )
+func (f *Forth) WordNumber() {
+	addr := int(f.DSPop())
+	length := int(f.CFetch(addr))
+	tokenBytes := make([]byte, length)
+	for i := 0; i < length; i++ {
+		tokenBytes[i] = f.CFetch(addr + 1 + i)
+	}
+	num, ok := f.ParseNumber(string(tokenBytes))
+	if ok {
+		f.DSPush(num)
+		f.DSPush(-1)
+	} else {
+		f.DSPush(0)
+		f.DSPush(0)
+	}
+}
+
+// WordBase pushes the address of the BASE system variable: BASE ( -- addr )
+func (f *Forth) WordBase() {
+	f.DSPush(Cell(BaseAddr))
+}
+
 // CFetch reads a byte from 64KB memory.
 func (f *Forth) CFetch(addr int) byte {
 	if addr < 0 || addr >= len(f.Memory) {
