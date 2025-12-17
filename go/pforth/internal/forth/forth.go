@@ -735,6 +735,60 @@ func (f *Forth) WordLIT() {
 	}
 }
 
+// WordState pushes the current compiler state flag (-1 compiling, 0 interpreting): STATE ( -- flag )
+func (f *Forth) WordState() {
+	f.DSPush(boolCell(f.State))
+}
+
+// WordLeftBracket sets STATE to interpreting (0): [ ( -- )
+func (f *Forth) WordLeftBracket() {
+	f.State = false
+}
+
+// WordRightBracket sets STATE to compiling (-1): ] ( -- )
+func (f *Forth) WordRightBracket() {
+	f.State = true
+}
+
+// WordLiteral compiles LIT followed by n: LITERAL ( n -- )
+func (f *Forth) WordLiteral() {
+	val := f.DSPop()
+	litXT, ok := f.FindXT("LIT")
+	if !ok {
+		f.DefinePrimitive("LIT", func(f *Forth) { f.WordLIT() })
+		litXT, _ = f.FindXT("LIT")
+	}
+	f.CompileList = append(f.CompileList, Cell(litXT), val)
+}
+
+// WordCompile compiles next token's execution token: COMPILE
+func (f *Forth) WordCompile() {
+	token, ok := f.ParseWord()
+	if !ok {
+		forthError("WORD NAME EXPECTED")
+	}
+	upper := strings.ToUpper(token)
+	xt, ok := f.FindXT(upper)
+	if !ok {
+		forthError("WORD NOT FOUND: %s", token)
+	}
+	f.CompileList = append(f.CompileList, Cell(xt))
+}
+
+// WordBracketCompile compiles next token's XT even if immediate: [COMPILE] ( -- )
+func (f *Forth) WordBracketCompile() {
+	token, ok := f.ParseWord()
+	if !ok {
+		forthError("WORD NAME EXPECTED")
+	}
+	upper := strings.ToUpper(token)
+	xt, ok := f.FindXT(upper)
+	if !ok {
+		forthError("WORD NOT FOUND: %s", token)
+	}
+	f.CompileList = append(f.CompileList, Cell(xt))
+}
+
 // WordCreate parses next word name from input, creating new WordCreate entry: CREATE ( -- )
 func (f *Forth) WordCreate() {
 	token, ok := f.ParseWord()
