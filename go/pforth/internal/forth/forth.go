@@ -871,6 +871,54 @@ func (f *Forth) WordZeroBranch() {
 	}
 }
 
+// WordIF compiles 0BRANCH and leaves offset address on DS: IF ( -- orig )
+func (f *Forth) WordIF() {
+	if !f.State {
+		forthError("IF ONLY IN COMPILATION")
+	}
+	xt, ok := f.FindXT("0BRANCH")
+	if !ok {
+		f.DefinePrimitive("0BRANCH", func(f *Forth) { f.WordZeroBranch() })
+		xt, _ = f.FindXT("0BRANCH")
+	}
+	f.CompileList = append(f.CompileList, Cell(xt), 0)
+	f.DSPush(Cell(len(f.CompileList) - 1))
+}
+
+// WordTHEN resolves forward branch offset from orig to current compilation position: THEN ( orig -- )
+func (f *Forth) WordTHEN() {
+	if !f.State {
+		forthError("THEN ONLY IN COMPILATION")
+	}
+	pos := int(f.DSPop())
+	if pos < 0 || pos >= len(f.CompileList) {
+		forthError("INVALID BRANCH TARGET")
+	}
+	offset := Cell(len(f.CompileList) - pos)
+	f.CompileList[pos] = offset
+}
+
+// WordELSE compiles unconditional BRANCH, resolves orig1, and returns orig2: ELSE ( orig1 -- orig2 )
+func (f *Forth) WordELSE() {
+	if !f.State {
+		forthError("ELSE ONLY IN COMPILATION")
+	}
+	branchXT, ok := f.FindXT("BRANCH")
+	if !ok {
+		f.DefinePrimitive("BRANCH", func(f *Forth) { f.WordBranch() })
+		branchXT, _ = f.FindXT("BRANCH")
+	}
+	f.CompileList = append(f.CompileList, Cell(branchXT), 0)
+	pos2 := len(f.CompileList) - 1
+	pos1 := int(f.DSPop())
+	if pos1 < 0 || pos1 >= len(f.CompileList) {
+		forthError("INVALID BRANCH TARGET")
+	}
+	offset1 := Cell(pos2 + 1 - pos1)
+	f.CompileList[pos1] = offset1
+	f.DSPush(Cell(pos2))
+}
+
 // WordCreate parses next word name from input, creating new WordCreate entry: CREATE ( -- )
 func (f *Forth) WordCreate() {
 	token, ok := f.ParseWord()
@@ -1522,4 +1570,7 @@ func (f *Forth) InitPrimitives() {
 	// 007 Control Flow
 	f.DefinePrimitive("BRANCH", func(f *Forth) { f.WordBranch() })
 	f.DefinePrimitive("0BRANCH", func(f *Forth) { f.WordZeroBranch() })
+	f.DefineImmediate("IF", func(f *Forth) { f.WordIF() })
+	f.DefineImmediate("THEN", func(f *Forth) { f.WordTHEN() })
+	f.DefineImmediate("ELSE", func(f *Forth) { f.WordELSE() })
 }
