@@ -1906,3 +1906,89 @@ func TestCompilerStateAndLiteralCompilation(t *testing.T) {
 
 	underflow(func() { f.WordLiteral() })
 }
+
+func TestColonDefinitionCompiler(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+	f.InitPrimitives()
+
+	// 1. Colon definition and execution: : SQUARE DUP * ; 5 SQUARE
+	f.InterpretLine(": SQUARE DUP * ;")
+	if f.State {
+		t.Fatal("expected State == false after definition")
+	}
+	sqW, ok := f.Lookup("SQUARE")
+	if !ok || sqW.Type != WordColon {
+		t.Fatal("SQUARE should be registered as WordColon")
+	}
+
+	f.InterpretLine("5 SQUARE")
+	if len(f.DS) != 1 || f.DSPop() != 25 {
+		t.Fatalf("5 SQUARE expected 25, got DS: %v", f.DS)
+	}
+
+	// 2. IMMEDIATE word execution during compilation
+	calledImm := false
+	f.DefineImmediate("HOOK", func(f *Forth) {
+		calledImm = true
+	})
+	f.InterpretLine(": TESTHOOK HOOK ;")
+	if !calledImm {
+		t.Fatal("HOOK was not executed during compilation")
+	}
+
+	// 3. IMMEDIATE word modifying latest
+	f.InterpretLine(": MYIMM ;")
+	f.WordImmediate()
+	myImmW, _ := f.Lookup("MYIMM")
+	if !myImmW.Immediate {
+		t.Fatal("IMMEDIATE failed to mark word")
+	}
+
+	// 4. RECURSE compiles compiling XT
+	f.InterpretLine(": MYREC RECURSE ;")
+	recW, _ := f.Lookup("MYREC")
+	recXT, _ := f.FindXT("MYREC")
+	exitXT, _ := f.FindXT("EXIT")
+	if len(recW.Body) != 2 || recW.Body[0] != Cell(recXT) || recW.Body[1] != Cell(exitXT) {
+		t.Fatalf("RECURSE body mismatch: %v", recW.Body)
+	}
+
+	// 5. Error handling
+	expectPanic := func(name string, fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatalf("%s expected panic", name)
+			}
+		}()
+		fn()
+	}
+
+	expectPanic("already compiling", func() {
+		f.State = true
+		f.WordColon()
+	})
+	f.State = false
+
+	expectPanic("missing word name", func() {
+		f.SetLine("")
+		f.WordColon()
+	})
+
+	expectPanic("semicolon when not compiling", func() {
+		f.State = false
+		f.WordSemicolon()
+	})
+
+	expectPanic("recurse when not compiling", func() {
+		f.State = false
+		f.WordRecurse()
+	})
+
+	expectPanic("recurse with invalid compiling XT", func() {
+		f.State = true
+		f.CompilingXT = -1
+		f.WordRecurse()
+	})
+	f.State = false
+}

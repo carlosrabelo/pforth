@@ -32,6 +32,7 @@ type Forth struct {
 	CompileName string
 	CompileList []Cell
 	CompileWord *Word
+	CompilingXT int
 	CurrentBody []Cell
 	IP          int
 
@@ -57,6 +58,7 @@ func New(input io.Reader, output io.Writer) *Forth {
 		wordsByName: make(map[string]int),
 		CompileList: make([]Cell, 0, 64),
 		CurrentBody: make([]Cell, 0, 64),
+		CompilingXT: -1,
 		Latest:      -1,
 		DP:          1024,
 		Base:        10,
@@ -789,6 +791,65 @@ func (f *Forth) WordBracketCompile() {
 	f.CompileList = append(f.CompileList, Cell(xt))
 }
 
+// WordColon starts compiling a new colon definition: : ( -- )
+func (f *Forth) WordColon() {
+	if f.State {
+		forthError("ALREADY COMPILING")
+	}
+	token, ok := f.ParseWord()
+	if !ok {
+		forthError("WORD NAME EXPECTED")
+	}
+	f.CompileList = f.CompileList[:0]
+	f.DefineWord(token, WordColon, nil, nil, false)
+	f.CompilingXT = len(f.Words) - 1
+	f.State = true
+}
+
+// WordSemicolon closes current colon definition: ; ( -- )
+func (f *Forth) WordSemicolon() {
+	if !f.State {
+		forthError("NOT IN COMPILATION STATE")
+	}
+	exitXT, ok := f.FindXT("EXIT")
+	if !ok {
+		f.DefinePrimitive("EXIT", func(f *Forth) { f.WordExit() })
+		exitXT, _ = f.FindXT("EXIT")
+	}
+	f.CompileList = append(f.CompileList, Cell(exitXT))
+	f.State = false
+	if f.CompilingXT >= 0 && f.CompilingXT < len(f.Words) {
+		f.Words[f.CompilingXT].Body = make([]Cell, len(f.CompileList))
+		copy(f.Words[f.CompilingXT].Body, f.CompileList)
+	}
+	f.CompileList = f.CompileList[:0]
+	f.CompilingXT = -1
+}
+
+// WordExit terminates execution of current colon definition: EXIT ( -- )
+func (f *Forth) WordExit() {
+	f.IP = len(f.CurrentBody)
+}
+
+// WordImmediate marks the most recently defined word as immediate: IMMEDIATE ( -- )
+func (f *Forth) WordImmediate() {
+	w := f.LatestWord()
+	if w != nil {
+		w.Immediate = true
+	}
+}
+
+// WordRecurse compiles the XT of the word currently being defined: RECURSE ( -- )
+func (f *Forth) WordRecurse() {
+	if !f.State {
+		forthError("RECURSE ONLY IN COMPILATION")
+	}
+	if f.CompilingXT < 0 {
+		forthError("NO COMPILATION IN PROGRESS")
+	}
+	f.CompileList = append(f.CompileList, Cell(f.CompilingXT))
+}
+
 // WordCreate parses next word name from input, creating new WordCreate entry: CREATE ( -- )
 func (f *Forth) WordCreate() {
 	token, ok := f.ParseWord()
@@ -1213,6 +1274,7 @@ func (f *Forth) Abort() {
 	f.DS = f.DS[:0]
 	f.RS = f.RS[:0]
 	f.CompileList = f.CompileList[:0]
+	f.CompilingXT = -1
 	f.IN = len(f.TIB)
 }
 
@@ -1348,4 +1410,91 @@ func (f *Forth) QUIT() {
 	for f.Running {
 		f.replStep()
 	}
+}
+
+// InitPrimitives registers standard native Forth primitives into dictionary.
+func (f *Forth) InitPrimitives() {
+	// 001 Core I/O
+	f.DefinePrimitive("KEY", func(f *Forth) { f.Key() })
+	f.DefinePrimitive("EMIT", func(f *Forth) { f.WordEmit() })
+	f.DefinePrimitive("CR", func(f *Forth) { f.WordCR() })
+	f.DefinePrimitive("SPACE", func(f *Forth) { f.WordSpace() })
+	f.DefinePrimitive("SPACES", func(f *Forth) { f.WordSpaces() })
+	f.DefinePrimitive("TYPE", func(f *Forth) { f.WordType() })
+	f.DefinePrimitive("BYE", func(f *Forth) { f.WordBye() })
+	f.DefinePrimitive("EXPECT", func(f *Forth) { f.WordExpect() })
+	f.DefinePrimitive("SPAN", func(f *Forth) { f.WordSpan() })
+	f.DefinePrimitive("QUIT", func(f *Forth) { f.WordQuit() })
+	f.DefinePrimitive("ABORT", func(f *Forth) { f.WordAbort() })
+
+	// 002 Memory & Stacks
+	f.DefinePrimitive("@", func(f *Forth) { f.WordFetch() })
+	f.DefinePrimitive("!", func(f *Forth) { f.WordStore() })
+	f.DefinePrimitive("C@", func(f *Forth) { f.WordCFetch() })
+	f.DefinePrimitive("C!", func(f *Forth) { f.WordCStore() })
+	f.DefinePrimitive("FILL", func(f *Forth) { f.WordFill() })
+	f.DefinePrimitive("CMOVE", func(f *Forth) { f.WordCMove() })
+	f.DefinePrimitive("CMOVE>", func(f *Forth) { f.WordCMoveGreater() })
+
+	// 003 Stack Manipulation
+	f.DefinePrimitive("DUP", func(f *Forth) { f.WordDup() })
+	f.DefinePrimitive("DROP", func(f *Forth) { f.WordDrop() })
+	f.DefinePrimitive("SWAP", func(f *Forth) { f.WordSwap() })
+	f.DefinePrimitive("OVER", func(f *Forth) { f.WordOver() })
+	f.DefinePrimitive("?DUP", func(f *Forth) { f.WordQDup() })
+	f.DefinePrimitive("2SWAP", func(f *Forth) { f.Word2Swap() })
+	f.DefinePrimitive("2OVER", func(f *Forth) { f.Word2Over() })
+	f.DefinePrimitive(">R", func(f *Forth) { f.WordToR() })
+	f.DefinePrimitive("R>", func(f *Forth) { f.WordRFrom() })
+	f.DefinePrimitive("R@", func(f *Forth) { f.WordRFetch() })
+
+	// 004 Arithmetic & Logic
+	f.DefinePrimitive("+", func(f *Forth) { f.WordPlus() })
+	f.DefinePrimitive("-", func(f *Forth) { f.WordMinus() })
+	f.DefinePrimitive("*", func(f *Forth) { f.WordMultiply() })
+	f.DefinePrimitive("/MOD", func(f *Forth) { f.WordSlashMod() })
+	f.DefinePrimitive("AND", func(f *Forth) { f.WordAnd() })
+	f.DefinePrimitive("OR", func(f *Forth) { f.WordOr() })
+	f.DefinePrimitive("XOR", func(f *Forth) { f.WordXor() })
+	f.DefinePrimitive("INVERT", func(f *Forth) { f.WordInvert() })
+	f.DefinePrimitive("=", func(f *Forth) { f.WordEquals() })
+	f.DefinePrimitive("<", func(f *Forth) { f.WordLess() })
+	f.DefinePrimitive(">", func(f *Forth) { f.WordGreater() })
+	f.DefinePrimitive("U<", func(f *Forth) { f.WordULess() })
+	f.DefinePrimitive("U>", func(f *Forth) { f.WordUGreater() })
+	f.DefinePrimitive("U<=", func(f *Forth) { f.WordULessEqual() })
+	f.DefinePrimitive("U>=", func(f *Forth) { f.WordUGreaterEqual() })
+
+	// 005 Dictionary & Words
+	f.DefinePrimitive("FIND", func(f *Forth) { f.WordFind() })
+	f.DefinePrimitive("'", func(f *Forth) { f.WordTick() })
+	f.DefinePrimitive(">BODY", func(f *Forth) { f.WordToBody() })
+	f.DefinePrimitive("DP", func(f *Forth) { f.WordDP() })
+	f.DefinePrimitive("HERE", func(f *Forth) { f.WordHere() })
+	f.DefinePrimitive("PAD", func(f *Forth) { f.WordPAD() })
+	f.DefinePrimitive("ALLOT", func(f *Forth) { f.WordAllot() })
+	f.DefinePrimitive(",", func(f *Forth) { f.WordComma() })
+	f.DefinePrimitive("C,", func(f *Forth) { f.WordCComma() })
+	f.DefinePrimitive("EXECUTE", func(f *Forth) { f.WordExecute() })
+	f.DefinePrimitive("CREATE", func(f *Forth) { f.WordCreate() })
+	f.DefinePrimitive("CONSTANT", func(f *Forth) { f.WordConstant() })
+	f.DefinePrimitive("VARIABLE", func(f *Forth) { f.WordVariable() })
+
+	// 006 Interpreter & Compiler
+	f.DefinePrimitive("WORD", func(f *Forth) { f.WordWord() })
+	f.DefinePrimitive("NUMBER", func(f *Forth) { f.WordNumber() })
+	f.DefinePrimitive("BASE", func(f *Forth) { f.WordBase() })
+	f.DefinePrimitive("INTERPRET", func(f *Forth) { f.WordInterpret() })
+	f.DefinePrimitive("LIT", func(f *Forth) { f.WordLIT() })
+	f.DefinePrimitive("STATE", func(f *Forth) { f.WordState() })
+	f.DefineImmediate("[", func(f *Forth) { f.WordLeftBracket() })
+	f.DefinePrimitive("]", func(f *Forth) { f.WordRightBracket() })
+	f.DefineImmediate("LITERAL", func(f *Forth) { f.WordLiteral() })
+	f.DefinePrimitive("COMPILE", func(f *Forth) { f.WordCompile() })
+	f.DefineImmediate("[COMPILE]", func(f *Forth) { f.WordBracketCompile() })
+	f.DefinePrimitive("EXIT", func(f *Forth) { f.WordExit() })
+	f.DefinePrimitive(":", func(f *Forth) { f.WordColon() })
+	f.DefineImmediate(";", func(f *Forth) { f.WordSemicolon() })
+	f.DefineImmediate("IMMEDIATE", func(f *Forth) { f.WordImmediate() })
+	f.DefineImmediate("RECURSE", func(f *Forth) { f.WordRecurse() })
 }
