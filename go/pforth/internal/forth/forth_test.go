@@ -1992,3 +1992,50 @@ func TestColonDefinitionCompiler(t *testing.T) {
 	})
 	f.State = false
 }
+
+func TestRuntimeBranchExecution(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+
+	// 1. Unconditional BRANCH forward
+	f.CurrentBody = []Cell{5}
+	f.IP = 0
+	f.WordBranch()
+	if f.IP != 5 {
+		t.Fatalf("BRANCH forward expected IP=5, got %d", f.IP)
+	}
+
+	// 2. Unconditional BRANCH backward
+	f.CurrentBody = []Cell{10, 20, 30, -2}
+	f.IP = 3
+	f.WordBranch()
+	if f.IP != 1 {
+		t.Fatalf("BRANCH backward expected IP=1, got %d", f.IP)
+	}
+
+	// 3. 0BRANCH when flag == 0 (takes branch)
+	f.CurrentBody = []Cell{7}
+	f.IP = 0
+	f.DSPush(0)
+	f.WordZeroBranch()
+	if f.IP != 7 {
+		t.Fatalf("0BRANCH on 0 expected IP=7, got %d", f.IP)
+	}
+
+	// 4. 0BRANCH when flag != 0 (skips offset cell)
+	f.CurrentBody = []Cell{7}
+	f.IP = 0
+	f.DSPush(-1)
+	f.WordZeroBranch()
+	if f.IP != 1 {
+		t.Fatalf("0BRANCH on non-zero expected IP=1, got %d", f.IP)
+	}
+
+	// 5. Underflow test
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("0BRANCH expected underflow panic on empty stack")
+		}
+	}()
+	f.WordZeroBranch()
+}
