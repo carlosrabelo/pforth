@@ -919,6 +919,84 @@ func (f *Forth) WordELSE() {
 	f.DSPush(Cell(pos2))
 }
 
+// WordBEGIN marks current compilation position on DS for backward loop jumps: BEGIN ( -- dest )
+func (f *Forth) WordBEGIN() {
+	if !f.State {
+		forthError("BEGIN ONLY IN COMPILATION")
+	}
+	f.DSPush(Cell(len(f.CompileList)))
+}
+
+// WordUNTIL compiles backward 0BRANCH to dest, looping until flag is true: UNTIL ( dest -- )
+func (f *Forth) WordUNTIL() {
+	if !f.State {
+		forthError("UNTIL ONLY IN COMPILATION")
+	}
+	dest := int(f.DSPop())
+	xt, ok := f.FindXT("0BRANCH")
+	if !ok {
+		f.DefinePrimitive("0BRANCH", func(f *Forth) { f.WordZeroBranch() })
+		xt, _ = f.FindXT("0BRANCH")
+	}
+	f.CompileList = append(f.CompileList, Cell(xt))
+	offset := Cell(dest - len(f.CompileList))
+	f.CompileList = append(f.CompileList, offset)
+}
+
+// WordAGAIN compiles unconditional backward BRANCH to dest: AGAIN ( dest -- )
+func (f *Forth) WordAGAIN() {
+	if !f.State {
+		forthError("AGAIN ONLY IN COMPILATION")
+	}
+	dest := int(f.DSPop())
+	branchXT, ok := f.FindXT("BRANCH")
+	if !ok {
+		f.DefinePrimitive("BRANCH", func(f *Forth) { f.WordBranch() })
+		branchXT, _ = f.FindXT("BRANCH")
+	}
+	f.CompileList = append(f.CompileList, Cell(branchXT))
+	offset := Cell(dest - len(f.CompileList))
+	f.CompileList = append(f.CompileList, offset)
+}
+
+// WordWHILE compiles forward 0BRANCH out of loop if flag is false: WHILE ( dest -- dest orig )
+func (f *Forth) WordWHILE() {
+	if !f.State {
+		forthError("WHILE ONLY IN COMPILATION")
+	}
+	dest := f.DSPop()
+	xt, ok := f.FindXT("0BRANCH")
+	if !ok {
+		f.DefinePrimitive("0BRANCH", func(f *Forth) { f.WordZeroBranch() })
+		xt, _ = f.FindXT("0BRANCH")
+	}
+	f.CompileList = append(f.CompileList, Cell(xt), 0)
+	orig := Cell(len(f.CompileList) - 1)
+	f.DSPush(dest)
+	f.DSPush(orig)
+}
+
+// WordREPEAT compiles backward BRANCH to dest and resolves forward branch from orig: REPEAT ( dest orig -- )
+func (f *Forth) WordREPEAT() {
+	if !f.State {
+		forthError("REPEAT ONLY IN COMPILATION")
+	}
+	orig := int(f.DSPop())
+	dest := int(f.DSPop())
+	branchXT, ok := f.FindXT("BRANCH")
+	if !ok {
+		f.DefinePrimitive("BRANCH", func(f *Forth) { f.WordBranch() })
+		branchXT, _ = f.FindXT("BRANCH")
+	}
+	f.CompileList = append(f.CompileList, Cell(branchXT))
+	offset := Cell(dest - len(f.CompileList))
+	f.CompileList = append(f.CompileList, offset)
+	if orig < 0 || orig >= len(f.CompileList) {
+		forthError("INVALID BRANCH TARGET")
+	}
+	f.CompileList[orig] = Cell(len(f.CompileList) - orig)
+}
+
 // WordCreate parses next word name from input, creating new WordCreate entry: CREATE ( -- )
 func (f *Forth) WordCreate() {
 	token, ok := f.ParseWord()
@@ -1573,4 +1651,9 @@ func (f *Forth) InitPrimitives() {
 	f.DefineImmediate("IF", func(f *Forth) { f.WordIF() })
 	f.DefineImmediate("THEN", func(f *Forth) { f.WordTHEN() })
 	f.DefineImmediate("ELSE", func(f *Forth) { f.WordELSE() })
+	f.DefineImmediate("BEGIN", func(f *Forth) { f.WordBEGIN() })
+	f.DefineImmediate("UNTIL", func(f *Forth) { f.WordUNTIL() })
+	f.DefineImmediate("AGAIN", func(f *Forth) { f.WordAGAIN() })
+	f.DefineImmediate("WHILE", func(f *Forth) { f.WordWHILE() })
+	f.DefineImmediate("REPEAT", func(f *Forth) { f.WordREPEAT() })
 }
