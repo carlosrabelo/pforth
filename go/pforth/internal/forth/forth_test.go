@@ -2125,3 +2125,73 @@ func TestConditionalBranchingCompiler(t *testing.T) {
 	})
 	f.State = false
 }
+
+func TestIndefiniteLoopConstructs(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+	f.InitPrimitives()
+
+	// 1. BEGIN ... UNTIL
+	f.InterpretLine(": COUNTDOWN BEGIN 1 - DUP 0 = UNTIL ;")
+	f.InterpretLine("5 COUNTDOWN")
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatalf("COUNTDOWN expected 0 on stack, got %v", f.DS)
+	}
+
+	// 2. BEGIN ... WHILE ... REPEAT
+	f.InterpretLine(": SUMDOWN 0 SWAP BEGIN DUP 0 > WHILE SWAP OVER + SWAP 1 - REPEAT DROP ;")
+	f.InterpretLine("5 SUMDOWN")
+	if len(f.DS) != 1 || f.DSPop() != 15 {
+		t.Fatalf("5 SUMDOWN expected 15, got %v", f.DS)
+	}
+
+	// 3. BEGIN ... AGAIN with early EXIT
+	f.InterpretLine(": TESTAGAIN BEGIN 1 - DUP 0 = IF EXIT THEN AGAIN ;")
+	f.InterpretLine("3 TESTAGAIN")
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatalf("3 TESTAGAIN expected 0, got %v", f.DS)
+	}
+
+	// 4. Compilation error checks
+	expectPanic := func(name string, fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatalf("%s expected panic", name)
+			}
+		}()
+		fn()
+	}
+
+	expectPanic("BEGIN when not compiling", func() {
+		f.State = false
+		f.WordBEGIN()
+	})
+
+	expectPanic("UNTIL when not compiling", func() {
+		f.State = false
+		f.WordUNTIL()
+	})
+
+	expectPanic("AGAIN when not compiling", func() {
+		f.State = false
+		f.WordAGAIN()
+	})
+
+	expectPanic("WHILE when not compiling", func() {
+		f.State = false
+		f.WordWHILE()
+	})
+
+	expectPanic("REPEAT when not compiling", func() {
+		f.State = false
+		f.WordREPEAT()
+	})
+
+	expectPanic("REPEAT invalid target", func() {
+		f.State = true
+		f.DSPush(0)
+		f.DSPush(9999)
+		f.WordREPEAT()
+	})
+	f.State = false
+}
