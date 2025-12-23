@@ -997,6 +997,137 @@ func (f *Forth) WordREPEAT() {
 	f.CompileList[orig] = Cell(len(f.CompileList) - orig)
 }
 
+// WordDoRun runtime primitive: pops limit and start from DS and pushes them to RS: (DO) ( limit start -- )
+func (f *Forth) WordDoRun() {
+	start := f.DSPop()
+	limit := f.DSPop()
+	f.RSPush(limit)
+	f.RSPush(start)
+}
+
+// WordLoopRun runtime primitive: increments index; loops back if index < limit, else exits: (LOOP)
+func (f *Forth) WordLoopRun() {
+	index := f.RSPop()
+	limit := f.RSPop()
+	index++
+	if index < limit {
+		f.RSPush(limit)
+		f.RSPush(index)
+		if f.IP < len(f.CurrentBody) {
+			offset := int(f.CurrentBody[f.IP])
+			f.IP += offset
+		}
+	} else {
+		f.IP++
+	}
+}
+
+// WordPlusLoopRun runtime primitive: adds step to index; loops back if not terminated, else exits: (+LOOP)
+func (f *Forth) WordPlusLoopRun() {
+	step := f.DSPop()
+	index := f.RSPop()
+	limit := f.RSPop()
+	index += step
+	if (step > 0 && index >= limit) || (step < 0 && index <= limit) {
+		f.IP++
+	} else {
+		f.RSPush(limit)
+		f.RSPush(index)
+		if f.IP < len(f.CurrentBody) {
+			offset := int(f.CurrentBody[f.IP])
+			f.IP += offset
+		}
+	}
+}
+
+// WordLeaveRun runtime primitive: sets loop index to limit on RS to force termination on next loop: (LEAVE)
+func (f *Forth) WordLeaveRun() {
+	if len(f.RS) >= 2 {
+		f.RS[len(f.RS)-1] = f.RS[len(f.RS)-2]
+	}
+}
+
+// WordDo compiles (DO) and pushes current compilation address to DS: DO ( limit start -- )
+func (f *Forth) WordDo() {
+	if !f.State {
+		forthError("DO ONLY IN COMPILATION")
+	}
+	xt, ok := f.FindXT("(DO)")
+	if !ok {
+		f.DefinePrimitive("(DO)", func(f *Forth) { f.WordDoRun() })
+		xt, _ = f.FindXT("(DO)")
+	}
+	f.CompileList = append(f.CompileList, Cell(xt))
+	f.DSPush(Cell(len(f.CompileList)))
+}
+
+// WordLoop compiles (LOOP) with backward branch offset to loop start: LOOP ( -- )
+func (f *Forth) WordLoop() {
+	if !f.State {
+		forthError("LOOP ONLY IN COMPILATION")
+	}
+	dest := int(f.DSPop())
+	xt, ok := f.FindXT("(LOOP)")
+	if !ok {
+		f.DefinePrimitive("(LOOP)", func(f *Forth) { f.WordLoopRun() })
+		xt, _ = f.FindXT("(LOOP)")
+	}
+	f.CompileList = append(f.CompileList, Cell(xt))
+	offset := Cell(dest - len(f.CompileList))
+	f.CompileList = append(f.CompileList, offset)
+}
+
+// WordPlusLoop compiles (+LOOP) with backward branch offset to loop start: +LOOP ( step -- )
+func (f *Forth) WordPlusLoop() {
+	if !f.State {
+		forthError("+LOOP ONLY IN COMPILATION")
+	}
+	dest := int(f.DSPop())
+	xt, ok := f.FindXT("(+LOOP)")
+	if !ok {
+		f.DefinePrimitive("(+LOOP)", func(f *Forth) { f.WordPlusLoopRun() })
+		xt, _ = f.FindXT("(+LOOP)")
+	}
+	f.CompileList = append(f.CompileList, Cell(xt))
+	offset := Cell(dest - len(f.CompileList))
+	f.CompileList = append(f.CompileList, offset)
+}
+
+// WordI copies current loop index from top of RS onto DS: I ( -- index )
+func (f *Forth) WordI() {
+	f.DSPush(f.RSPeek())
+}
+
+// WordJ copies outer loop index from outer RS pair onto DS: J ( -- index )
+func (f *Forth) WordJ() {
+	if len(f.RS) < 4 {
+		forthError("J: NOT ENOUGH LOOP LEVELS")
+	}
+	f.DSPush(f.RS[len(f.RS)-3])
+}
+
+// WordLeave compiles (LEAVE) runtime word: LEAVE ( -- )
+func (f *Forth) WordLeave() {
+	if !f.State {
+		forthError("LEAVE ONLY IN COMPILATION")
+	}
+	xt, ok := f.FindXT("(LEAVE)")
+	if !ok {
+		f.DefinePrimitive("(LEAVE)", func(f *Forth) { f.WordLeaveRun() })
+		xt, _ = f.FindXT("(LEAVE)")
+	}
+	f.CompileList = append(f.CompileList, Cell(xt))
+}
+
+// WordUnloop discards loop limit and index from return stack: UNLOOP ( -- )
+func (f *Forth) WordUnloop() {
+	if len(f.RS) < 2 {
+		forthError("RETURN STACK UNDERFLOW")
+	}
+	f.RSPop()
+	f.RSPop()
+}
+
 // WordCreate parses next word name from input, creating new WordCreate entry: CREATE ( -- )
 func (f *Forth) WordCreate() {
 	token, ok := f.ParseWord()
@@ -1656,4 +1787,15 @@ func (f *Forth) InitPrimitives() {
 	f.DefineImmediate("AGAIN", func(f *Forth) { f.WordAGAIN() })
 	f.DefineImmediate("WHILE", func(f *Forth) { f.WordWHILE() })
 	f.DefineImmediate("REPEAT", func(f *Forth) { f.WordREPEAT() })
+	f.DefinePrimitive("(DO)", func(f *Forth) { f.WordDoRun() })
+	f.DefinePrimitive("(LOOP)", func(f *Forth) { f.WordLoopRun() })
+	f.DefinePrimitive("(+LOOP)", func(f *Forth) { f.WordPlusLoopRun() })
+	f.DefinePrimitive("(LEAVE)", func(f *Forth) { f.WordLeaveRun() })
+	f.DefinePrimitive("I", func(f *Forth) { f.WordI() })
+	f.DefinePrimitive("J", func(f *Forth) { f.WordJ() })
+	f.DefinePrimitive("UNLOOP", func(f *Forth) { f.WordUnloop() })
+	f.DefineImmediate("DO", func(f *Forth) { f.WordDo() })
+	f.DefineImmediate("LOOP", func(f *Forth) { f.WordLoop() })
+	f.DefineImmediate("+LOOP", func(f *Forth) { f.WordPlusLoop() })
+	f.DefineImmediate("LEAVE", func(f *Forth) { f.WordLeave() })
 }

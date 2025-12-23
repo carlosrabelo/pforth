@@ -2195,3 +2195,101 @@ func TestIndefiniteLoopConstructs(t *testing.T) {
 	})
 	f.State = false
 }
+
+func TestCountedLoopRuntimeAndCompiler(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+	f.InitPrimitives()
+
+	// 1. DO ... LOOP: sum 0 to 4
+	f.InterpretLine(": SUM5 0 5 0 DO I + LOOP ;")
+	f.InterpretLine("SUM5")
+	if len(f.DS) != 1 || f.DSPop() != 10 {
+		t.Fatalf("SUM5 expected 10, got %v", f.DS)
+	}
+
+	// 2. DO ... +LOOP: step by 2
+	f.InterpretLine(": SUMEVEN 0 10 0 DO I + 2 +LOOP ;")
+	f.InterpretLine("SUMEVEN")
+	if len(f.DS) != 1 || f.DSPop() != 20 {
+		t.Fatalf("SUMEVEN expected 20, got %v", f.DS)
+	}
+
+	// DO ... +LOOP: negative step
+	f.InterpretLine(": SUMDOWN 0 0 10 DO I + -2 +LOOP ;")
+	f.InterpretLine("SUMDOWN")
+	if len(f.DS) != 1 || f.DSPop() != 30 {
+		t.Fatalf("SUMDOWN expected 30, got %v", f.DS)
+	}
+
+	// 3. Nested DO loops with I and J
+	f.InterpretLine(": NESTEDLOOP 0 3 0 DO 2 0 DO I J + + LOOP LOOP ;")
+	f.InterpretLine("NESTEDLOOP")
+	if len(f.DS) != 1 || f.DSPop() != 9 {
+		t.Fatalf("NESTEDLOOP expected 9, got %v", f.DS)
+	}
+
+	// 4. LEAVE
+	f.InterpretLine(": TESTLEAVE 0 10 0 DO I 5 = IF LEAVE ELSE I + THEN LOOP ;")
+	f.InterpretLine("TESTLEAVE")
+	if len(f.DS) != 1 {
+		t.Fatalf("TESTLEAVE expected 1 item on DS, got %v", f.DS)
+	}
+	if val := f.DSPop(); val != 10 {
+		t.Fatalf("TESTLEAVE expected 10, got %d", val)
+	}
+
+	// 5. UNLOOP and early exit
+	f.InterpretLine(": EARLYEXIT 10 0 DO I 5 = IF UNLOOP 99 EXIT THEN LOOP 0 ;")
+	f.InterpretLine("EARLYEXIT")
+	if len(f.DS) != 1 || f.DSPop() != 99 {
+		t.Fatalf("EARLYEXIT expected 99, got %v", f.DS)
+	}
+	if len(f.RS) != 0 {
+		t.Fatalf("EARLYEXIT left dirty return stack: %v", f.RS)
+	}
+
+	// 6. Compilation and runtime error checks
+	expectPanic := func(name string, fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatalf("%s expected panic", name)
+			}
+		}()
+		fn()
+	}
+
+	expectPanic("DO when not compiling", func() {
+		f.State = false
+		f.WordDo()
+	})
+
+	expectPanic("LOOP when not compiling", func() {
+		f.State = false
+		f.WordLoop()
+	})
+
+	expectPanic("+LOOP when not compiling", func() {
+		f.State = false
+		f.WordPlusLoop()
+	})
+
+	expectPanic("LEAVE when not compiling", func() {
+		f.State = false
+		f.WordLeave()
+	})
+
+	expectPanic("J not enough levels", func() {
+		f.RS = f.RS[:0]
+		f.RSPush(10)
+		f.RSPush(0)
+		f.WordJ()
+	})
+	f.RS = f.RS[:0]
+
+	expectPanic("UNLOOP underflow", func() {
+		f.RS = f.RS[:0]
+		f.WordUnloop()
+	})
+	f.RS = f.RS[:0]
+}
