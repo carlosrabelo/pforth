@@ -2359,3 +2359,72 @@ func TestNumericOutputAndStackInspector(t *testing.T) {
 		f.WordUDot()
 	})
 }
+
+func TestStringLiteralsAndOutput(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+	f.InitPrimitives()
+
+	// 1. ." in interpret mode
+	f.InterpretLine(".\" Hello World!\"")
+	if out.String() != "Hello World!" {
+		t.Fatalf(".\" in interpret mode expected 'Hello World!', got %q", out.String())
+	}
+	out.Reset()
+
+	// 2. ." inside colon definition
+	f.InterpretLine(": GREET .\" Hi Forth!\" ;")
+	f.InterpretLine("GREET")
+	if out.String() != "Hi Forth!" {
+		t.Fatalf(".\" in colon definition expected 'Hi Forth!', got %q", out.String())
+	}
+	out.Reset()
+
+	// 3. S" in interpret mode
+	f.InterpretLine("S\" ABCDE\"")
+	if len(f.DS) != 2 {
+		t.Fatalf("S\" in interpret mode expected 2 items on DS, got %v", f.DS)
+	}
+	length := int(f.DSPop())
+	addr := int(f.DSPop())
+	if length != 5 {
+		t.Fatalf("S\" expected length 5, got %d", length)
+	}
+	extracted := string(f.Memory[addr : addr+length])
+	if extracted != "ABCDE" {
+		t.Fatalf("S\" expected 'ABCDE', got %q", extracted)
+	}
+
+	// 4. S" inside colon definition
+	f.InterpretLine(": GETSTR S\" Testing 123\" ;")
+	f.InterpretLine("GETSTR")
+	if len(f.DS) != 2 {
+		t.Fatalf("GETSTR expected 2 items on DS, got %v", f.DS)
+	}
+	length2 := int(f.DSPop())
+	addr2 := int(f.DSPop())
+	if length2 != 11 {
+		t.Fatalf("GETSTR expected length 11, got %d", length2)
+	}
+	extracted2 := string(f.Memory[addr2 : addr2+length2])
+	if extracted2 != "Testing 123" {
+		t.Fatalf("GETSTR expected 'Testing 123', got %q", extracted2)
+	}
+
+	// 5. Parenthesis comments ( )
+	f.InterpretLine("10 ( this is a comment ) 20 +")
+	if len(f.DS) != 1 || f.DSPop() != 30 {
+		t.Fatalf("( ) comment failed, DS: %v", f.DS)
+	}
+	f.InterpretLine(": TESTCOMM ( comment ) 5 ( another ) ;")
+	f.InterpretLine("TESTCOMM")
+	if len(f.DS) != 1 || f.DSPop() != 5 {
+		t.Fatalf("( ) in colon failed, DS: %v", f.DS)
+	}
+
+	// 6. Backslash comment \
+	f.InterpretLine("42 \\ everything here is ignored 999")
+	if len(f.DS) != 1 || f.DSPop() != 42 {
+		t.Fatalf("\\ comment failed, DS: %v", f.DS)
+	}
+}
