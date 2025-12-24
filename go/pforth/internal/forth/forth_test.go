@@ -2,6 +2,8 @@ package forth
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -2427,4 +2429,76 @@ func TestStringLiteralsAndOutput(t *testing.T) {
 	if len(f.DS) != 1 || f.DSPop() != 42 {
 		t.Fatalf("\\ comment failed, DS: %v", f.DS)
 	}
+}
+
+func TestStringEvaluationAndFileLoading(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+	f.InitPrimitives()
+
+	// 1. EVALUATE
+	f.InterpretLine("S\" 10 20 +\" EVALUATE")
+	if len(f.DS) != 1 || f.DSPop() != 30 {
+		t.Fatalf("EVALUATE 10 20 + failed, DS: %v", f.DS)
+	}
+
+	f.InterpretLine("S\" : TRIPLE 3 * ;\" EVALUATE")
+	f.InterpretLine("7 TRIPLE")
+	if len(f.DS) != 1 || f.DSPop() != 21 {
+		t.Fatalf("EVALUATE : TRIPLE 3 * ; failed, DS: %v", f.DS)
+	}
+
+	// 2. INCLUDED
+	tmpDir := t.TempDir()
+	fsFile := filepath.Join(tmpDir, "fromfile.fs")
+	if err := os.WriteFile(fsFile, []byte(": FROMFILE 100 200 + ;\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	f.InterpretLine("S\" " + fsFile + "\" INCLUDED")
+	f.InterpretLine("FROMFILE")
+	if len(f.DS) != 1 || f.DSPop() != 300 {
+		t.Fatalf("FROMFILE via INCLUDED failed, DS: %v", f.DS)
+	}
+
+	// 3. INCLUDE
+	fsFile2 := filepath.Join(tmpDir, "fromfile2.fs")
+	if err := os.WriteFile(fsFile2, []byte(": FROMFILE2 50 25 - ;\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	f.InterpretLine("INCLUDE " + fsFile2)
+	f.InterpretLine("FROMFILE2")
+	if len(f.DS) != 1 || f.DSPop() != 25 {
+		t.Fatalf("FROMFILE2 via INCLUDE failed, DS: %v", f.DS)
+	}
+
+	// 4. Error handling
+	expectPanic := func(name string, fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatalf("%s expected panic", name)
+			}
+		}()
+		fn()
+	}
+
+	expectPanic("EVALUATE underflow", func() {
+		f.WordEvaluate()
+	})
+
+	expectPanic("INCLUDED underflow", func() {
+		f.WordIncluded()
+	})
+
+	expectPanic("INCLUDED missing file", func() {
+		f.InterpretLine("S\" /nonexistent/file.fs\" INCLUDED")
+	})
+
+	expectPanic("INCLUDE missing file", func() {
+		f.InterpretLine("INCLUDE /nonexistent/file.fs")
+	})
+
+	expectPanic("INCLUDE without token", func() {
+		f.SetLine("")
+		f.WordInclude()
+	})
 }
