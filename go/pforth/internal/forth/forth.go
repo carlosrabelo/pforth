@@ -1573,6 +1573,84 @@ func (f *Forth) WordPage() {
 	f.EmitStr("\033[2J\033[H")
 }
 
+func (f *Forth) parseString() string {
+	if f.IN < len(f.TIB) && f.TIB[f.IN] == ' ' {
+		f.IN++
+	}
+	var buf []byte
+	for f.IN < len(f.TIB) && f.TIB[f.IN] != '"' {
+		buf = append(buf, f.TIB[f.IN])
+		f.IN++
+	}
+	if f.IN < len(f.TIB) && f.TIB[f.IN] == '"' {
+		f.IN++
+	}
+	return string(buf)
+}
+
+// WordDotString prints or compiles string literal: ." ( -- )
+func (f *Forth) WordDotString() {
+	s := f.parseString()
+	if f.State {
+		addr := f.Here()
+		for i := 0; i < len(s); i++ {
+			f.CStore(addr+i, s[i])
+		}
+		f.Allot(len(s))
+
+		litXT, ok := f.FindXT("LIT")
+		if !ok {
+			f.DefinePrimitive("LIT", func(f *Forth) { f.WordLIT() })
+			litXT, _ = f.FindXT("LIT")
+		}
+		typeXT, ok := f.FindXT("TYPE")
+		if !ok {
+			f.DefinePrimitive("TYPE", func(f *Forth) { f.WordType() })
+			typeXT, _ = f.FindXT("TYPE")
+		}
+		f.CompileList = append(f.CompileList, Cell(litXT), Cell(addr), Cell(litXT), Cell(len(s)), Cell(typeXT))
+	} else {
+		f.EmitStr(s)
+	}
+}
+
+// WordSString pushes or compiles string address and length: S" ( -- addr len )
+func (f *Forth) WordSString() {
+	s := f.parseString()
+	addr := f.Here()
+	for i := 0; i < len(s); i++ {
+		f.CStore(addr+i, s[i])
+	}
+	f.Allot(len(s))
+
+	if f.State {
+		litXT, ok := f.FindXT("LIT")
+		if !ok {
+			f.DefinePrimitive("LIT", func(f *Forth) { f.WordLIT() })
+			litXT, _ = f.FindXT("LIT")
+		}
+		f.CompileList = append(f.CompileList, Cell(litXT), Cell(addr), Cell(litXT), Cell(len(s)))
+	} else {
+		f.DSPush(Cell(addr))
+		f.DSPush(Cell(len(s)))
+	}
+}
+
+// WordParen ignores comments up to closing parenthesis: ( ( -- )
+func (f *Forth) WordParen() {
+	for f.IN < len(f.TIB) && f.TIB[f.IN] != ')' {
+		f.IN++
+	}
+	if f.IN < len(f.TIB) && f.TIB[f.IN] == ')' {
+		f.IN++
+	}
+}
+
+// WordBackslash ignores remainder of line as comment: \ ( -- )
+func (f *Forth) WordBackslash() {
+	f.IN = len(f.TIB)
+}
+
 // WordBye sets Running to false to signal interpreter termination.
 func (f *Forth) WordBye() {
 	f.Running = false
@@ -1865,4 +1943,8 @@ func (f *Forth) InitPrimitives() {
 	f.DefinePrimitive("U.", func(f *Forth) { f.WordUDot() })
 	f.DefinePrimitive(".S", func(f *Forth) { f.WordDotS() })
 	f.DefinePrimitive("PAGE", func(f *Forth) { f.WordPage() })
+	f.DefineImmediate(".\"", func(f *Forth) { f.WordDotString() })
+	f.DefineImmediate("S\"", func(f *Forth) { f.WordSString() })
+	f.DefineImmediate("(", func(f *Forth) { f.WordParen() })
+	f.DefineImmediate("\\", func(f *Forth) { f.WordBackslash() })
 }
