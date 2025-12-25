@@ -2502,3 +2502,48 @@ func TestStringEvaluationAndFileLoading(t *testing.T) {
 		f.WordInclude()
 	})
 }
+
+func TestModuleDependencyResolver(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+	f.InitPrimitives()
+
+	// 1. #REQUIRE CORE
+	f.InterpretLine("#REQUIRE CORE")
+	if !f.Loaded["CORE"] {
+		t.Fatal("expected CORE to be marked loaded")
+	}
+
+	// Verify words defined by core.fs
+	f.InterpretLine("5 1+")
+	if len(f.DS) != 1 || f.DSPop() != 6 {
+		t.Fatalf("1+ from CORE failed, DS: %v", f.DS)
+	}
+
+	f.InterpretLine("10 20 NIP")
+	if len(f.DS) != 1 || f.DSPop() != 20 {
+		t.Fatalf("NIP from CORE failed, DS: %v", f.DS)
+	}
+
+	// 2. Deduplication: requiring CORE again is a no-op
+	f.InterpretLine("#REQUIRE CORE")
+
+	// 3. Error handling
+	expectPanic := func(name string, fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatalf("%s expected panic", name)
+			}
+		}()
+		fn()
+	}
+
+	expectPanic("missing module name", func() {
+		f.SetLine("")
+		f.WordRequire()
+	})
+
+	expectPanic("nonexistent module", func() {
+		f.InterpretLine("#REQUIRE NONEXISTENT_MODULE_NAME")
+	})
+}
