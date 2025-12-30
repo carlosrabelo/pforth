@@ -47,6 +47,9 @@ type Forth struct {
 
 	Loaded      map[string]bool
 	Interrupted int32
+
+	lastSavePath    string
+	hasLastSavePath bool
 }
 
 // New creates and initializes a new Forth engine instance.
@@ -1408,6 +1411,11 @@ func (f *Forth) WordSpan() {
 func (f *Forth) WordExpect() {
 	maxlen := int(f.DSPop())
 	addr := int(f.DSPop())
+	if f.bufIn == nil {
+		f.Running = false
+		f.Store(SpanAddr, 0)
+		return
+	}
 	if maxlen <= 0 {
 		f.Store(SpanAddr, 0)
 		return
@@ -1416,6 +1424,9 @@ func (f *Forth) WordExpect() {
 	for count < maxlen {
 		b, err := f.bufIn.ReadByte()
 		if err != nil {
+			if count == 0 {
+				f.Running = false // EOF with nothing read: stop like the other ports
+			}
 			break
 		}
 		if b == '\r' {
@@ -1657,6 +1668,15 @@ func (f *Forth) WordBye() {
 	f.Running = false
 }
 
+// WordRunning pushes -1 when the engine is still running, else 0.
+func (f *Forth) WordRunning() {
+	if f.Running {
+		f.DSPush(Cell(-1))
+	} else {
+		f.DSPush(0)
+	}
+}
+
 // LoadFile reads and evaluates a Forth source file by path.
 func (f *Forth) LoadFile(path string) error {
 	data, err := os.ReadFile(path)
@@ -1737,62 +1757,166 @@ func (f *Forth) WordInclude() {
 	}
 }
 
-const coreFSSource = `\ pForth core library
-: NIP    SWAP DROP ;
-: TUCK   SWAP OVER ;
-: ROT    >R SWAP R> SWAP ;
-: -ROT   SWAP >R SWAP R> ;
-: 2DUP   OVER OVER ;
-: 2DROP  DROP DROP ;
-: /      /MOD NIP ;
-: MOD    /MOD DROP ;
-: 0=     0 = ;
-: <>     = 0= ;
-: 0<>    0 <> ;
-: 0<     0 < ;
-: 0>     0 > ;
-: <=     OVER OVER < ROT ROT = OR ;
-: >=     OVER OVER > ROT ROT = OR ;
-: 1+     1 + ;
-: 1-     1 - ;
-: 2+     2 + ;
-: 2-     2 - ;
-: 2*     2 * ;
-: 2/     2 / ;
-: NEGATE 0 SWAP - ;
-: +!     TUCK @ + SWAP ! ;
-: ABS    DUP 0< IF NEGATE THEN ;
-: MIN    2DUP < IF DROP ELSE SWAP DROP THEN ;
-: MAX    2DUP > IF DROP ELSE SWAP DROP THEN ;
-: SPACE  32 EMIT ;
-: SPACES 0 MAX 0 DO SPACE LOOP ;
-: ?      @ . ;
-: PAGE   12 EMIT ;
-: ERASE  0 FILL ;
-`
+// WordLoadFile reads the file named by the next token into memory: LOAD-FILE ( addr maxlen -- n )
+func (f *Forth) WordLoadFile() {
+	token, ok := f.ParseWord()
+	if !ok {
+		forthError("FILE NAME EXPECTED")
+	}
+	maxlen := int(f.DSPop())
+	addr := int(uint16(f.DSPop()))
+	f.lastSavePath = token
+	f.hasLastSavePath = true
+	if maxlen <= 0 {
+		f.DSPush(0)
+		return
+	}
+	data, err := os.ReadFile(token)
+	if err != nil {
+		forthError("CANNOT OPEN: %s", token)
+	}
+	n := len(data)
+	if n > maxlen {
+		n = maxlen
+	}
+	if n > len(f.Memory)-addr {
+		n = len(f.Memory) - addr
+	}
+	copy(f.Memory[addr:addr+n], data[:n])
+	f.DSPush(Cell(n))
+}
 
-func findLibPath(name string) string {
+// WordSaveFile writes memory to the path remembered by LOAD-FILE: SAVE-FILE ( addr len -- )
+func (f *Forth) WordSaveFile() {
+	if !f.hasLastSavePath {
+		forthError("EDITOR FILE")
+	}
+	length := int(f.DSPop())
+	addr := int(uint16(f.DSPop()))
+	n := 0
+	if length > 0 {
+		n = length
+		if n > len(f.Memory)-addr {
+			n = len(f.Memory) - addr
+		}
+	}
+	if err := os.WriteFile(f.lastSavePath, f.Memory[addr:addr+n], 0o644); err != nil {
+		forthError("CANNOT OPEN: %s", f.lastSavePath)
+	}
+}
+
+// WordRestOfLine copies the rest of TIB (after leading spaces) into memory: REST-OF-LINE ( addr maxlen -- n )
+func (f *Forth) WordRestOfLine() {
+	maxlen := int(f.DSPop())
+	addr := int(uint16(f.DSPop()))
+	for f.IN < len(f.TIB) && f.TIB[f.IN] == ' ' {
+		f.IN++
+	}
+	start := f.IN
+	if start > len(f.TIB) {
+		start = len(f.TIB)
+	}
+	rest := f.TIB[start:]
+	f.IN = len(f.TIB)
+	n := 0
+	if maxlen > 0 {
+		n = len(rest)
+		if n > maxlen {
+			n = maxlen
+		}
+		if n > len(f.Memory)-addr {
+			n = len(f.Memory) - addr
+		}
+	}
+	if n > 0 {
+		copy(f.Memory[addr:addr+n], rest[:n])
+	}
+	f.DSPush(Cell(n))
+}
+
+// WordError raises a Forth error with the message stored in memory: ERROR ( addr len -- )
+func (f *Forth) WordError() {
+	length := int(f.DSPop())
+	addr := int(uint16(f.DSPop()))
+	n := 0
+	if length > 0 {
+		n = length
+		if n > len(f.Memory)-addr {
+			n = len(f.Memory) - addr
+		}
+	}
+	forthError("%s", string(f.Memory[addr:addr+n]))
+}
+
+func moduleFileName(name string) string {
 	lower := strings.ToLower(name)
 	if !strings.HasSuffix(lower, ".fs") {
 		lower += ".fs"
 	}
-	dir, err := os.Getwd()
-	if err != nil {
-		return ""
+	return lower
+}
+
+func isRegularFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
+// findLibPath resolves a module file in this order:
+//  1. $PFORTH_LIB/<file>
+//  2. ./pforth/<file> from the working directory
+//  3. <exe_dir>/../pforth/<file>, then <exe_dir>/pforth/<file>
+//  4. /usr/share/pforth/<file>
+//  5. walking cwd parents for demos/<file> only
+func findLibPath(name string) string {
+	file := moduleFileName(name)
+
+	if env := os.Getenv("PFORTH_LIB"); env != "" {
+		candidate := filepath.Join(env, file)
+		if isRegularFile(candidate) {
+			return candidate
+		}
 	}
-	searchDirs := []string{"libs", "demos"}
-	for {
-		for _, sd := range searchDirs {
-			candidate := filepath.Join(dir, sd, lower)
-			if _, err := os.Stat(candidate); err == nil {
-				return candidate
+
+	cwd, cwdErr := os.Getwd()
+	if cwdErr == nil {
+		candidate := filepath.Join(cwd, "pforth", file)
+		if isRegularFile(candidate) {
+			return candidate
+		}
+	}
+
+	if exe, err := os.Executable(); err == nil {
+		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = resolved
+		}
+		exeDir := filepath.Dir(exe)
+		for _, candidate := range []string{
+			filepath.Join(exeDir, "..", "pforth", file),
+			filepath.Join(exeDir, "pforth", file),
+		} {
+			if isRegularFile(candidate) {
+				return filepath.Clean(candidate)
 			}
 		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
+	}
+
+	if candidate := filepath.Join("/usr/share/pforth", file); isRegularFile(candidate) {
+		return candidate
+	}
+
+	if cwdErr == nil {
+		dir := cwd
+		for {
+			candidate := filepath.Join(dir, "demos", file)
+			if isRegularFile(candidate) {
+				return candidate
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
 		}
-		dir = parent
 	}
 	return ""
 }
@@ -1804,19 +1928,13 @@ func (f *Forth) RequireModule(name string) {
 		return
 	}
 	path := findLibPath(name)
-	if path != "" {
-		f.Loaded[upper] = true
-		if err := f.LoadFile(path); err != nil {
-			forthError("MODULE NOT FOUND: %s", name)
-		}
-		return
+	if path == "" {
+		forthError("MODULE NOT FOUND: %s", name)
 	}
-	if upper == "CORE" {
-		f.Loaded[upper] = true
-		f.LoadSystem(coreFSSource)
-		return
+	f.Loaded[upper] = true
+	if err := f.LoadFile(path); err != nil {
+		forthError("MODULE NOT FOUND: %s", name)
 	}
-	forthError("MODULE NOT FOUND: %s", name)
 }
 
 // WordRequire parses next module name token and loads module: #REQUIRE <module>
@@ -1826,6 +1944,67 @@ func (f *Forth) WordRequire() {
 		forthError("MODULE NAME EXPECTED")
 	}
 	f.RequireModule(token)
+}
+
+// WordWords lists dictionary names newest-first: WORDS ( -- )
+func (f *Forth) WordWords() {
+	first := true
+	for i := len(f.Words) - 1; i >= 0; i-- {
+		if !first {
+			f.EmitStr(" ")
+		}
+		first = false
+		if f.Words[i].Immediate {
+			f.EmitStr("I:")
+		}
+		f.EmitStr(f.Words[i].Name)
+	}
+	f.EmitStr("\n")
+}
+
+// WordDump prints memory bytes in hex rows: DUMP ( addr len -- )
+func (f *Forth) WordDump() {
+	length := int(f.DSPop())
+	addr := int(uint16(f.DSPop()))
+	if length <= 0 {
+		return
+	}
+	remaining := length
+	for remaining > 0 {
+		if addr < 0 || addr >= len(f.Memory) {
+			forthError("MEMORY ACCESS OUT OF BOUNDS: %d", addr)
+		}
+		want := remaining
+		if want > 16 {
+			want = 16
+		}
+		fit := want
+		if addr+fit > len(f.Memory) {
+			fit = len(f.Memory) - addr
+		}
+		f.EmitStr(fmt.Sprintf("%04X  ", addr))
+		for i := 0; i < fit; i++ {
+			if i > 0 {
+				f.EmitStr(" ")
+			}
+			f.EmitStr(fmt.Sprintf("%02X", f.Memory[addr+i]))
+		}
+		f.EmitStr("  ")
+		for i := 0; i < fit; i++ {
+			b := f.Memory[addr+i]
+			if b >= 32 && b <= 126 {
+				f.EmitStr(string(b))
+			} else {
+				f.EmitStr(".")
+			}
+		}
+		f.EmitStr("\n")
+		addr += fit
+		remaining -= fit
+		if fit < want {
+			forthError("MEMORY ACCESS OUT OF BOUNDS: %d", addr)
+		}
+	}
 }
 
 // EmitStr writes a string to output.
@@ -1990,6 +2169,7 @@ func (f *Forth) InitPrimitives() {
 	f.DefinePrimitive("SPACES", func(f *Forth) { f.WordSpaces() })
 	f.DefinePrimitive("TYPE", func(f *Forth) { f.WordType() })
 	f.DefinePrimitive("BYE", func(f *Forth) { f.WordBye() })
+	f.DefinePrimitive("RUNNING", func(f *Forth) { f.WordRunning() })
 	f.DefinePrimitive("EXPECT", func(f *Forth) { f.WordExpect() })
 	f.DefinePrimitive("SPAN", func(f *Forth) { f.WordSpan() })
 	f.DefinePrimitive("QUIT", func(f *Forth) { f.WordQuit() })
@@ -2101,5 +2281,12 @@ func (f *Forth) InitPrimitives() {
 	f.DefinePrimitive("EVALUATE", func(f *Forth) { f.WordEvaluate() })
 	f.DefinePrimitive("INCLUDED", func(f *Forth) { f.WordIncluded() })
 	f.DefinePrimitive("INCLUDE", func(f *Forth) { f.WordInclude() })
+	f.DefinePrimitive("LOAD-FILE", func(f *Forth) { f.WordLoadFile() })
+	f.DefinePrimitive("SAVE-FILE", func(f *Forth) { f.WordSaveFile() })
+	f.DefinePrimitive("REST-OF-LINE", func(f *Forth) { f.WordRestOfLine() })
+	f.DefinePrimitive("ERROR", func(f *Forth) { f.WordError() })
 	f.DefinePrimitive("#REQUIRE", func(f *Forth) { f.WordRequire() })
+
+	f.DefinePrimitive("WORDS", func(f *Forth) { f.WordWords() })
+	f.DefinePrimitive("DUMP", func(f *Forth) { f.WordDump() })
 }

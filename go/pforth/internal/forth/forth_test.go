@@ -2,6 +2,7 @@ package forth
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -2706,5 +2707,346 @@ func TestCoreLibraryBootstrap(t *testing.T) {
 	f.InterpretLine("2000 2 ERASE")
 	if f.Fetch(2000) != 0 {
 		t.Fatal("ERASE failed")
+	}
+}
+
+// demoPath resolves demos/<name>.fs from $PFORTH_DEMOS or by walking up from cwd.
+func demoPath(t *testing.T, name string) string {
+	t.Helper()
+	file := name + ".fs"
+	if env := os.Getenv("PFORTH_DEMOS"); env != "" {
+		candidate := filepath.Join(env, file)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		candidate := filepath.Join(dir, "demos", file)
+		if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() {
+			return candidate
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	t.Fatalf("demo file not found: demos/%s", file)
+	return ""
+}
+
+func runDemo(t *testing.T, name string) string {
+	t.Helper()
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+	f.InitPrimitives()
+	f.RequireModule("CORE")
+	if err := f.LoadFile(demoPath(t, name)); err != nil {
+		t.Fatalf("load demo %s: %v", name, err)
+	}
+	return out.String()
+}
+
+func TestDemoHelloWorld(t *testing.T) {
+	if got := runDemo(t, "hello"); got != "Hello, world!\n" {
+		t.Fatalf("expected 'Hello, world!\\n', got %q", got)
+	}
+}
+
+func TestDemoFactorial(t *testing.T) {
+	if got := runDemo(t, "factorial"); got != "120 \n5040 \n" {
+		t.Fatalf("expected '120 \\n5040 \\n', got %q", got)
+	}
+}
+
+func TestDemoFibonacci(t *testing.T) {
+	if got := runDemo(t, "fibonacci"); got != "55 \n" {
+		t.Fatalf("expected '55 \\n', got %q", got)
+	}
+}
+
+func TestDemoBubbleSort(t *testing.T) {
+	if got := runDemo(t, "bubble_sort"); got != "0 1 2 3 4 5 6 7 8 9 \n" {
+		t.Fatalf("expected sorted digits, got %q", got)
+	}
+}
+
+func TestDemoSieve(t *testing.T) {
+	if got := runDemo(t, "sieve"); got != "1899 \n" {
+		t.Fatalf("expected '1899 \\n', got %q", got)
+	}
+}
+
+func TestDemoTowerOfHanoi(t *testing.T) {
+	expected := "Move 1 -> 3 \n" +
+		"Move 1 -> 2 \n" +
+		"Move 3 -> 2 \n" +
+		"Move 1 -> 3 \n" +
+		"Move 2 -> 1 \n" +
+		"Move 2 -> 3 \n" +
+		"Move 1 -> 3 \n"
+	if got := runDemo(t, "hanoi"); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestWordsAndDump(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+	f.InitPrimitives()
+	f.RequireModule("CORE")
+
+	f.InterpretLine(": AAA 1 ;")
+	f.InterpretLine(": BBB 2 ; IMMEDIATE")
+	out.Reset()
+	f.InterpretLine("WORDS")
+	listing := out.String()
+	if !strings.HasPrefix(listing, "I:BBB AAA ") {
+		t.Fatalf("WORDS expected prefix I:BBB AAA , got %q", listing)
+	}
+	if !strings.HasSuffix(listing, "\n") {
+		t.Fatalf("WORDS expected trailing newline, got %q", listing)
+	}
+
+	out.Reset()
+	for i := 0; i < 16; i++ {
+		f.Memory[0x3000+i] = byte(0x41 + i)
+	}
+	f.InterpretLine("12288 16 DUMP")
+	wantDump := "3000  41 42 43 44 45 46 47 48 49 4A 4B 4C 4D 4E 4F 50  ABCDEFGHIJKLMNOP\n"
+	if out.String() != wantDump {
+		t.Fatalf("DUMP expected %q, got %q", wantDump, out.String())
+	}
+
+	out.Reset()
+	f.InterpretLine("0 0 DUMP")
+	f.InterpretLine("100 -1 DUMP")
+	if out.String() != "" {
+		t.Fatalf("DUMP with non-positive length expected empty, got %q", out.String())
+	}
+
+	out.Reset()
+	func() {
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Fatal("DUMP past end expected panic")
+			}
+			fe, ok := r.(*ForthError)
+			if !ok || fe.Message != "MEMORY ACCESS OUT OF BOUNDS: 65536" {
+				t.Fatalf("unexpected panic: %v", r)
+			}
+		}()
+		f.InterpretLine("65530 10 DUMP")
+	}()
+	wantPartial := "FFFA  00 00 00 00 00 00  ......\n"
+	if out.String() != wantPartial {
+		t.Fatalf("partial DUMP expected %q, got %q", wantPartial, out.String())
+	}
+}
+
+func TestLoadFileAndSaveFile(t *testing.T) {
+	f := New(&bytes.Buffer{}, &bytes.Buffer{})
+	f.InitPrimitives()
+	path := filepath.Join(t.TempDir(), "data.txt")
+	if err := os.WriteFile(path, []byte("hello"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	expectMsg := func(want string, fn func()) {
+		t.Helper()
+		defer func() {
+			r := recover()
+			fe, ok := r.(*ForthError)
+			if !ok || fe.Message != want {
+				t.Fatalf("expected %q, got %v", want, r)
+			}
+		}()
+		fn()
+	}
+
+	expectMsg("EDITOR FILE", func() { f.InterpretLine("0 0 SAVE-FILE") })
+	f.DS = f.DS[:0]
+	expectMsg("FILE NAME EXPECTED", func() { f.InterpretLine("2000 100 LOAD-FILE") })
+	f.DS = f.DS[:0]
+
+	f.InterpretLine("2000 100 LOAD-FILE " + path)
+	if len(f.DS) != 1 || f.DSPop() != 5 || string(f.Memory[2000:2005]) != "hello" {
+		t.Fatalf("LOAD-FILE failed, DS: %v", f.DS)
+	}
+	f.InterpretLine("2000 3 LOAD-FILE " + path)
+	if len(f.DS) != 1 || f.DSPop() != 3 {
+		t.Fatalf("LOAD-FILE maxlen failed, DS: %v", f.DS)
+	}
+
+	copy(f.Memory[3000:], "ok")
+	f.InterpretLine("3000 2 SAVE-FILE")
+	if data, _ := os.ReadFile(path); string(data) != "ok" {
+		t.Fatalf("SAVE-FILE wrote %q", data)
+	}
+	f.InterpretLine("3000 0 SAVE-FILE")
+	if data, _ := os.ReadFile(path); len(data) != 0 {
+		t.Fatalf("SAVE-FILE len 0 wrote %q", data)
+	}
+
+	missing := path + ".missing"
+	expectMsg("CANNOT OPEN: "+missing, func() { f.InterpretLine("2000 10 LOAD-FILE " + missing) })
+}
+
+// expectForthError runs fn and fails unless it panics with a ForthError of the given message.
+func expectForthError(t *testing.T, want string, fn func()) {
+	t.Helper()
+	defer func() {
+		t.Helper()
+		r := recover()
+		fe, ok := r.(*ForthError)
+		if !ok || fe.Message != want {
+			t.Fatalf("expected error %q, got %v", want, r)
+		}
+	}()
+	fn()
+}
+
+func TestBlockEditor(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+	f.InitPrimitives()
+	f.RequireModule("CORE")
+
+	expectForthError(t, "UNKNOWN WORD: LIST", func() { f.InterpretLine("LIST") })
+	f.InterpretLine("#REQUIRE EDITOR")
+	if !f.Loaded["EDITOR"] {
+		t.Fatal("expected EDITOR in loaded modules")
+	}
+
+	expectForthError(t, "EDITOR FILE", func() { f.InterpretLine("FLUSH") })
+	expectForthError(t, "FILE NAME EXPECTED", func() { f.InterpretLine("OPEN") })
+	expectForthError(t, "CANNOT OPEN: /no/such/dir/block.txt", func() {
+		f.InterpretLine("OPEN /no/such/dir/block.txt")
+	})
+
+	path := filepath.Join(t.TempDir(), "pforth_editor.blk")
+	if err := os.WriteFile(path, []byte("first line"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	f.InterpretLine("OPEN " + path)
+	out.Reset()
+	f.InterpretLine("LIST")
+	var expected strings.Builder
+	expected.WriteString("0: first line\n")
+	for line := 1; line < 16; line++ {
+		expected.WriteString(fmt.Sprintf("%d: \n", line))
+	}
+	if out.String() != expected.String() {
+		t.Fatalf("LIST expected %q, got %q", expected.String(), out.String())
+	}
+
+	f.InterpretLine("0 P hello world")
+	f.InterpretLine("15 P last")
+	f.InterpretLine("3 P")
+	expectForthError(t, "EDITOR LINE", func() { f.InterpretLine("16 P x") })
+	expectForthError(t, "EDITOR LINE", func() { f.InterpretLine("-1 P x") })
+	out.Reset()
+	f.InterpretLine("LIST")
+	listing := out.String()
+	if !strings.HasPrefix(listing, "0: hello world\n1: \n2: \n3: \n") {
+		t.Fatalf("unexpected listing prefix: %q", listing)
+	}
+	if !strings.HasSuffix(listing, "15: last\n") {
+		t.Fatalf("unexpected listing suffix: %q", listing)
+	}
+
+	f.InterpretLine("1 P " + strings.Repeat("x", 70))
+	f.InterpretLine("FLUSH")
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(saved) != 1024 {
+		t.Fatalf("expected 1024 bytes saved, got %d", len(saved))
+	}
+	if string(saved[:64]) != "hello world"+strings.Repeat(" ", 53) {
+		t.Fatalf("line 0 mismatch: %q", saved[:64])
+	}
+	if string(saved[64:128]) != strings.Repeat("x", 64) {
+		t.Fatalf("line 1 mismatch: %q", saved[64:128])
+	}
+	if string(saved[128:132]) != "    " {
+		t.Fatalf("line 2 mismatch: %q", saved[128:132])
+	}
+	if string(saved[15*64:15*64+4]) != "last" {
+		t.Fatalf("line 15 mismatch: %q", saved[15*64:15*64+4])
+	}
+
+	f.InterpretLine("OPEN " + path)
+	out.Reset()
+	f.InterpretLine("LIST")
+	if !strings.HasPrefix(out.String(), "0: hello world\n1: xxxx") {
+		t.Fatalf("reopened listing mismatch: %q", out.String())
+	}
+}
+
+func playScript(t *testing.T, script string) (*Forth, string) {
+	t.Helper()
+	out := &bytes.Buffer{}
+	f := New(strings.NewReader(script), out)
+	f.InitPrimitives()
+	f.RequireModule("CORE")
+	out.Reset()
+	expectForthError(t, "UNKNOWN WORD: PLAY", func() { f.InterpretLine("PLAY") })
+	f.InterpretLine("#REQUIRE ADVENTURE")
+	f.InterpretLine("PLAY")
+	return f, out.String()
+}
+
+func TestTextAdventure(t *testing.T) {
+	f, out := playScript(t, "NORTH\nEAST\n")
+	want := "You are in a small room.\n" +
+		"Exits: NORTH\n" +
+		"> NORTH\n" +
+		"You are in a hall.\n" +
+		"Exits: SOUTH EAST\n" +
+		"> EAST\n" +
+		"You found the key.\n" +
+		"> "
+	if out != want {
+		t.Fatalf("adventure expected %q, got %q", want, out)
+	}
+	if f.Running {
+		t.Fatal("expected Running to be false after EOF")
+	}
+	if !f.Loaded["ADVENTURE"] {
+		t.Fatal("expected ADVENTURE in loaded modules")
+	}
+
+	_, out = playScript(t, "west\n north \nNORTH\nSOUTH\nEAST\n")
+	want = "You are in a small room.\n" +
+		"Exits: NORTH\n" +
+		"> west\n" +
+		"Can't go that way.\n" +
+		"You are in a small room.\n" +
+		"Exits: NORTH\n" +
+		">  north \n" +
+		"You are in a hall.\n" +
+		"Exits: SOUTH EAST\n" +
+		"> NORTH\n" +
+		"Can't go that way.\n" +
+		"You are in a hall.\n" +
+		"Exits: SOUTH EAST\n" +
+		"> SOUTH\n" +
+		"You are in a small room.\n" +
+		"Exits: NORTH\n" +
+		"> EAST\n" +
+		"Can't go that way.\n" +
+		"You are in a small room.\n" +
+		"Exits: NORTH\n" +
+		"> "
+	if out != want {
+		t.Fatalf("wander expected %q, got %q", want, out)
 	}
 }
