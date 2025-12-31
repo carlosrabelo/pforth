@@ -4,7 +4,7 @@ MAKEFLAGS += --no-print-directory
 
 .PHONY: build clean help quality run setup test
 
-COMPONENTS := cpp go
+COMPONENTS := cpp go pascal
 
 help: ## Show available targets
 	@grep -hE '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) \

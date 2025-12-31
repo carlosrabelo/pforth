@@ -19,6 +19,7 @@ make build
 
 - `cpp/` — porta C++20
 - `go/` — porta Go
+- `pascal/` — porta Free Pascal
 - `pforth/` — bibliotecas Forth partilhadas
 - `demos/` — programas de demonstração
 
