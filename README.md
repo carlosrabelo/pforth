@@ -19,6 +19,7 @@ make build
 
 - `cpp/` — C++20 port
 - `go/` — Go port
+- `pascal/` — Free Pascal port
 - `pforth/` — shared Forth libraries
 - `demos/` — demonstration programs
 
