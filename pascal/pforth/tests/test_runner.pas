@@ -115,10 +115,90 @@ begin
   end;
 end;
 
+procedure TestLineReaderAndTIB;
+var
+  InStream, OutStream: TStringStream;
+  F: TForth;
+  I: Integer;
+  Res: String;
+  Ok: Boolean;
+begin
+  WriteLn('Testing Line reader and TIB...');
+  InStream := TStringStream.Create('TEST LINE'#10);
+  OutStream := TStringStream.Create('');
+  F := TForth.Create(InStream, OutStream);
+  try
+    // EXPECT buffer at 2000, maxlen 20
+    F.PushDS(2000);
+    F.PushDS(20);
+    F.WordExpect;
+
+    Res := '';
+    for I := 0 to 8 do
+      Res := Res + Chr(F.Memory[2000 + I]);
+    AssertTrue('EXPECT stored TEST LINE at 2000', Res = 'TEST LINE');
+
+    // SPAN
+    F.WordSpan;
+    AssertTrue('SPAN pushes 1000', F.PopDS = 1000);
+    AssertTrue('Memory at SPAN holds length 9', F.FetchCell(1000) = 9);
+  finally
+    F.Free;
+    InStream.Free;
+    OutStream.Free;
+  end;
+
+  // EXPECT truncates to maxlen
+  InStream := TStringStream.Create('A VERY LONG STRING'#10);
+  OutStream := TStringStream.Create('');
+  F := TForth.Create(InStream, OutStream);
+  try
+    F.PushDS(3000);
+    F.PushDS(5);
+    F.WordExpect;
+
+    Res := '';
+    for I := 0 to 4 do
+      Res := Res + Chr(F.Memory[3000 + I]);
+    AssertTrue('EXPECT truncated to maxlen 5', Res = 'A VER');
+    AssertTrue('Memory at SPAN holds length 5', F.FetchCell(1000) = 5);
+  finally
+    F.Free;
+    InStream.Free;
+    OutStream.Free;
+  end;
+
+  // ReadLine and SetLine
+  InStream := TStringStream.Create('FIRST LINE'#13#10'SECOND LINE'#10);
+  OutStream := TStringStream.Create('');
+  F := TForth.Create(InStream, OutStream);
+  try
+    Ok := F.ReadLine(Res);
+    AssertTrue('ReadLine 1 returns True', Ok);
+    AssertTrue('ReadLine 1 matches FIRST LINE', Res = 'FIRST LINE');
+
+    Ok := F.ReadLine(Res);
+    AssertTrue('ReadLine 2 returns True', Ok);
+    AssertTrue('ReadLine 2 matches SECOND LINE', Res = 'SECOND LINE');
+
+    Ok := F.ReadLine(Res);
+    AssertTrue('ReadLine at EOF returns False', not Ok);
+
+    F.SetLine('LINE FOR TIB');
+    AssertTrue('SetLine sets TIB', F.TIB = 'LINE FOR TIB');
+    AssertTrue('SetLine resets IN_PTR', F.IN_PTR = 1);
+  finally
+    F.Free;
+    InStream.Free;
+    OutStream.Free;
+  end;
+end;
+
 begin
   WriteLn('=== Running Free Pascal Test Runner ===');
   TestCLIArgDispatch;
   TestConsoleIOPrimitives;
+  TestLineReaderAndTIB;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
