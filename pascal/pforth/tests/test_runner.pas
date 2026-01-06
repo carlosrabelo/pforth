@@ -194,11 +194,68 @@ begin
   end;
 end;
 
+procedure TestQuitAbortCold;
+var
+  F: TForth;
+  InStream, OutStream: TMemoryStream;
+  OutText: String;
+  Raised: Boolean;
+begin
+  WriteLn('--- TestQuitAbortCold ---');
+
+  InStream := TMemoryStream.Create;
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(InStream, OutStream);
+  try
+    AssertTrue('cold start loads CORE', Length(F.LoadedModules) >= 1);
+    AssertTrue('first loaded module is CORE', F.LoadedModules[0] = 'CORE');
+    F.Quit;
+    SetLength(OutText, OutStream.Size);
+    if OutStream.Size > 0 then
+    begin
+      OutStream.Position := 0;
+      OutStream.Read(OutText[1], OutStream.Size);
+    end;
+    AssertTrue('QUIT prints ok prompt then stops at EOF', OutText = ' ok' + #10);
+  finally
+    F.Free;
+    InStream.Free;
+    OutStream.Free;
+  end;
+
+  InStream := TMemoryStream.Create;
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(InStream, OutStream);
+  try
+    F.PushDS(1);
+    F.PushRS(2);
+    F.Interrupted := True;
+    Raised := False;
+    try
+      F.CheckInterrupt;
+    except
+      on E: EForthError do
+      begin
+        Raised := True;
+        AssertTrue('interrupt message', E.Message = 'INTERRUPTED');
+      end;
+    end;
+    AssertTrue('CheckInterrupt raises', Raised);
+    AssertTrue('interrupt clears data stack', F.DepthDS = 0);
+    AssertTrue('interrupt clears return stack', F.DepthRS = 0);
+  finally
+    F.Free;
+    InStream.Free;
+    OutStream.Free;
+  end;
+end;
+
 begin
   WriteLn('=== Running Free Pascal Test Runner ===');
   TestCLIArgDispatch;
   TestConsoleIOPrimitives;
   TestLineReaderAndTIB;
+  TestQuitAbortCold;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
