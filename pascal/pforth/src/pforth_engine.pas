@@ -8,6 +8,8 @@ uses
   SysUtils, Classes, pforth_types;
 
 type
+  TStringSet = array of String;
+
   TForth = class
   public
     DS: TCellStack;
@@ -15,10 +17,14 @@ type
     Memory: TMemory;
     Running: Boolean;
     Interrupted: Boolean;
+    State: Boolean;
+    CompilingXT: Integer;
+    CompileList: TCellStack;
     InputStream: TStream;
     OutputStream: TStream;
     TIB: String;
     IN_PTR: Integer;
+    LoadedModules: TStringSet;
 
     constructor Create(AInput: TStream = nil; AOutput: TStream = nil);
     destructor Destroy; override;
@@ -58,6 +64,15 @@ type
     procedure WordBye;
     procedure WordSpan;
     procedure WordExpect;
+
+    // REPL / cold start (001.4)
+    procedure InitPrimitives;
+    procedure RequireModule(const ModuleName: String);
+    procedure Abort;
+    procedure CheckInterrupt;
+    procedure InterpretLine(const ALine: String); virtual;
+    procedure ReplStep;
+    procedure Quit;
   end;
 
 implementation
@@ -67,9 +82,13 @@ begin
   inherited Create;
   SetLength(DS, 0);
   SetLength(RS, 0);
+  SetLength(CompileList, 0);
+  SetLength(LoadedModules, 0);
   FillChar(Memory, SizeOf(Memory), 0);
   Running := True;
   Interrupted := False;
+  State := False;
+  CompilingXT := -1;
   InputStream := AInput;
   OutputStream := AOutput;
 
@@ -80,6 +99,9 @@ begin
   Memory[DP_ADDR + 1] := Byte((INITIAL_DP shr 8) and $FF);
   Memory[BASE_ADDR] := 10;
   Memory[BASE_ADDR + 1] := 0;
+
+  InitPrimitives;
+  RequireModule('CORE');
 end;
 
 destructor TForth.Destroy;
@@ -420,6 +442,86 @@ begin
     Inc(Count);
   end;
   StoreCell(SPAN_ADDR, TCell(Count));
+end;
+
+procedure TForth.InitPrimitives;
+begin
+  { Kernel registration grows in later specs. }
+end;
+
+procedure TForth.RequireModule(const ModuleName: String);
+var
+  Upper: String;
+  I: Integer;
+begin
+  Upper := UpperCase(ModuleName);
+  for I := 0 to High(LoadedModules) do
+    if LoadedModules[I] = Upper then
+      Exit;
+  SetLength(LoadedModules, Length(LoadedModules) + 1);
+  LoadedModules[High(LoadedModules)] := Upper;
+  if Upper = 'CORE' then
+  begin
+    { CORE colon library is installed in later specs. }
+  end;
+end;
+
+procedure TForth.Abort;
+begin
+  SetLength(DS, 0);
+  SetLength(RS, 0);
+  SetLength(CompileList, 0);
+  CompilingXT := -1;
+  State := False;
+  Interrupted := False;
+  if Length(TIB) = 0 then
+    IN_PTR := 1
+  else
+    IN_PTR := Length(TIB) + 1;
+end;
+
+procedure TForth.CheckInterrupt;
+begin
+  if Interrupted then
+  begin
+    Interrupted := False;
+    Abort;
+    raise EForthError.Create('INTERRUPTED');
+  end;
+end;
+
+procedure TForth.InterpretLine(const ALine: String);
+begin
+  SetLine(ALine);
+  { Outer interpreter is filled in later specs. }
+end;
+
+procedure TForth.ReplStep;
+var
+  Line: String;
+begin
+  try
+    if not State then
+      EmitString(' ok' + #10);
+    if not ReadLine(Line) then
+      Exit;
+    CheckInterrupt;
+    InterpretLine(Line);
+  except
+    on E: EForthError do
+    begin
+      EmitString(E.Message + #10);
+      Abort;
+    end;
+  end;
+end;
+
+procedure TForth.Quit;
+begin
+  Running := True;
+  Abort;
+  while Running do
+    ReplStep;
 end;
 
 end.
