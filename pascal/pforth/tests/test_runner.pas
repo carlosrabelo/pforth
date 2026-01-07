@@ -253,6 +253,45 @@ begin
   end;
 end;
 
+procedure TestCellAndByteAccessPrimitives;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+begin
+  WriteLn('--- TestCellAndByteAccessPrimitives ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.PushDS($1234);
+    F.PushDS(1024);
+    F.WordStore;
+    F.PushDS(1024);
+    F.WordFetch;
+    AssertTrue('@ after ! yields 0x1234', F.PopDS = $1234);
+    AssertTrue('@ leaves DS empty', F.DepthDS = 0);
+
+    F.PushDS(Ord('A'));
+    F.PushDS(3000);
+    F.WordCStore;
+    F.PushDS(3000);
+    F.WordCFetch;
+    AssertTrue('C@ after C! yields A', F.PopDS = Ord('A'));
+
+    F.StoreCell(2200, 120);
+    F.PushDS(5);
+    F.PushDS(2200);
+    F.WordPlusStore;
+    AssertTrue('+! adds 5', F.FetchCell(2200) = 125);
+    F.PushDS(-50);
+    F.PushDS(2200);
+    F.WordPlusStore;
+    AssertTrue('+! adds negative', F.FetchCell(2200) = 75);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
 procedure TestQuitAbortCold;
 var
   F: TForth;
@@ -316,6 +355,7 @@ begin
   TestLineReaderAndTIB;
   TestQuitAbortCold;
   TestMemoryModelAndEndianness;
+  TestCellAndByteAccessPrimitives;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));

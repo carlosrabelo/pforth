@@ -65,6 +65,13 @@ type
     procedure WordSpan;
     procedure WordExpect;
 
+    // Memory words (002.3)
+    procedure WordFetch;
+    procedure WordStore;
+    procedure WordCFetch;
+    procedure WordCStore;
+    procedure WordPlusStore;
+
     // REPL / cold start (001.4)
     procedure InitPrimitives;
     procedure RequireModule(const ModuleName: String);
@@ -427,6 +434,51 @@ begin
     Inc(Count);
   end;
   StoreCell(SPAN_ADDR, TCell(Count));
+end;
+
+function ZeroExtendAddr(V: TCell): Integer;
+begin
+  Result := Integer(TUCell(V));
+end;
+
+procedure TForth.WordFetch;
+begin
+  PushDS(FetchCell(ZeroExtendAddr(PopDS)));
+end;
+
+procedure TForth.WordStore;
+var
+  Addr: Integer;
+  Val: TCell;
+begin
+  Addr := ZeroExtendAddr(PopDS);
+  Val := PopDS;
+  StoreCell(Addr, Val);
+end;
+
+procedure TForth.WordCFetch;
+begin
+  PushDS(TCell(CFetch(ZeroExtendAddr(PopDS))));
+end;
+
+procedure TForth.WordCStore;
+var
+  Addr: Integer;
+  Val: TCell;
+begin
+  Addr := ZeroExtendAddr(PopDS);
+  Val := PopDS;
+  CStore(Addr, Byte(TUCell(Val) and $FF));
+end;
+
+procedure TForth.WordPlusStore;
+var
+  Addr: Integer;
+  N: TCell;
+begin
+  Addr := ZeroExtendAddr(PopDS);
+  N := PopDS;
+  StoreCell(Addr, FetchCell(Addr) + N);
 end;
 
 procedure TForth.InitPrimitives;
