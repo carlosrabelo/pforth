@@ -41,10 +41,10 @@ type
     function DepthRS: Integer;
 
     // Memory helpers
-    procedure StoreCell(Addr: TUCell; Val: TCell);
-    function FetchCell(Addr: TUCell): TCell;
-    procedure CStore(Addr: TUCell; Val: Byte);
-    function CFetch(Addr: TUCell): Byte;
+    procedure StoreCell(Addr: Integer; Val: TCell);
+    function FetchCell(Addr: Integer): TCell;
+    procedure CStore(Addr: Integer; Val: Byte);
+    function CFetch(Addr: Integer): Byte;
 
     // Output helper
     procedure EmitChar(Ch: Char);
@@ -277,52 +277,37 @@ begin
   Running := False;
 end;
 
-procedure TForth.StoreCell(Addr: TUCell; Val: TCell);
-var
-  UAddr: LongWord;
+procedure TForth.StoreCell(Addr: Integer; Val: TCell);
 begin
-  UAddr := LongWord(Addr);
-  if UAddr + 1 <= 65535 then
-  begin
-    Memory[UAddr] := Byte(TUCell(Val) and $FF);
-    Memory[UAddr + 1] := Byte((TUCell(Val) shr 8) and $FF);
-  end;
+  if (Addr < 0) or (Addr > 65534) then
+    raise EForthError.Create('OUT OF MEMORY RANGE');
+  Memory[Addr] := Byte(TUCell(Val) and $FF);
+  Memory[Addr + 1] := Byte((TUCell(Val) shr 8) and $FF);
 end;
 
-function TForth.FetchCell(Addr: TUCell): TCell;
+function TForth.FetchCell(Addr: Integer): TCell;
 var
-  UAddr: LongWord;
   LowB, HighB: Byte;
 begin
-  UAddr := LongWord(Addr);
-  if UAddr + 1 <= 65535 then
-  begin
-    LowB := Memory[UAddr];
-    HighB := Memory[UAddr + 1];
-    Result := TCell(Word(LowB) or (Word(HighB) shl 8));
-  end
-  else
-    Result := 0;
+  if (Addr < 0) or (Addr > 65534) then
+    raise EForthError.Create('OUT OF MEMORY RANGE');
+  LowB := Memory[Addr];
+  HighB := Memory[Addr + 1];
+  Result := TCell(Word(LowB) or (Word(HighB) shl 8));
 end;
 
-procedure TForth.CStore(Addr: TUCell; Val: Byte);
-var
-  UAddr: LongWord;
+procedure TForth.CStore(Addr: Integer; Val: Byte);
 begin
-  UAddr := LongWord(Addr);
-  if UAddr <= 65535 then
-    Memory[UAddr] := Val;
+  if (Addr < 0) or (Addr > 65535) then
+    raise EForthError.Create('OUT OF MEMORY RANGE');
+  Memory[Addr] := Val;
 end;
 
-function TForth.CFetch(Addr: TUCell): Byte;
-var
-  UAddr: LongWord;
+function TForth.CFetch(Addr: Integer): Byte;
 begin
-  UAddr := LongWord(Addr);
-  if UAddr <= 65535 then
-    Result := Memory[UAddr]
-  else
-    Result := 0;
+  if (Addr < 0) or (Addr > 65535) then
+    raise EForthError.Create('OUT OF MEMORY RANGE');
+  Result := Memory[Addr];
 end;
 
 procedure TForth.SetLine(const ALine: String);

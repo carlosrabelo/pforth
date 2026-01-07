@@ -194,6 +194,65 @@ begin
   end;
 end;
 
+procedure TestMemoryModelAndEndianness;
+var
+  F: TForth;
+  Raised: Boolean;
+begin
+  WriteLn('--- TestMemoryModelAndEndianness ---');
+  F := TForth.Create(nil, TMemoryStream.Create);
+  try
+    F.StoreCell(1024, $1234);
+    AssertTrue('little-endian low byte 0x34', F.Memory[1024] = $34);
+    AssertTrue('little-endian high byte 0x12', F.Memory[1025] = $12);
+    AssertTrue('FetchCell 0x1234', F.FetchCell(1024) = $1234);
+
+    F.StoreCell(2000, -1);
+    AssertTrue('StoreCell -1 low FF', F.Memory[2000] = $FF);
+    AssertTrue('StoreCell -1 high FF', F.Memory[2001] = $FF);
+    AssertTrue('FetchCell -1', F.FetchCell(2000) = -1);
+
+    Raised := False;
+    try
+      F.CFetch(65536);
+    except
+      on E: EForthError do
+      begin
+        Raised := True;
+        AssertTrue('byte OOR message', E.Message = 'OUT OF MEMORY RANGE');
+      end;
+    end;
+    AssertTrue('CFetch 65536 raises', Raised);
+
+    Raised := False;
+    try
+      F.StoreCell(65535, 1);
+    except
+      on E: EForthError do
+      begin
+        Raised := True;
+        AssertTrue('cell OOR message', E.Message = 'OUT OF MEMORY RANGE');
+      end;
+    end;
+    AssertTrue('StoreCell 65535 raises', Raised);
+
+    Raised := False;
+    try
+      F.PopRS;
+    except
+      on E: EForthError do
+      begin
+        Raised := True;
+        AssertTrue('RS underflow message', E.Message = 'RETURN STACK UNDERFLOW');
+      end;
+    end;
+    AssertTrue('PopRS underflow raises', Raised);
+  finally
+    F.OutputStream.Free;
+    F.Free;
+  end;
+end;
+
 procedure TestQuitAbortCold;
 var
   F: TForth;
@@ -256,6 +315,7 @@ begin
   TestConsoleIOPrimitives;
   TestLineReaderAndTIB;
   TestQuitAbortCold;
+  TestMemoryModelAndEndianness;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
