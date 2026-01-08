@@ -253,6 +253,56 @@ begin
   end;
 end;
 
+procedure TestBasicStackWords;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  Raised: Boolean;
+begin
+  WriteLn('--- TestBasicStackWords ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.PushDS(7);
+    F.WordDup;
+    AssertTrue('DUP top', F.PopDS = 7);
+    AssertTrue('DUP second', F.PopDS = 7);
+
+    F.PushDS(1);
+    F.PushDS(2);
+    F.WordDrop;
+    AssertTrue('DROP leaves 1', F.PopDS = 1);
+
+    F.PushDS(10);
+    F.PushDS(20);
+    F.WordSwap;
+    AssertTrue('SWAP top 10', F.PopDS = 10);
+    AssertTrue('SWAP second 20', F.PopDS = 20);
+
+    F.PushDS(1);
+    F.PushDS(2);
+    F.WordOver;
+    AssertTrue('OVER top 1', F.PopDS = 1);
+    AssertTrue('OVER mid 2', F.PopDS = 2);
+    AssertTrue('OVER bot 1', F.PopDS = 1);
+
+    Raised := False;
+    try
+      F.WordDup;
+    except
+      on E: EForthError do
+      begin
+        Raised := True;
+        AssertTrue('DUP underflow msg', E.Message = 'DATA STACK UNDERFLOW');
+      end;
+    end;
+    AssertTrue('DUP underflow raises', Raised);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
 procedure TestMemoryBlockOperations;
 var
   F: TForth;
@@ -416,6 +466,7 @@ begin
   TestMemoryModelAndEndianness;
   TestCellAndByteAccessPrimitives;
   TestMemoryBlockOperations;
+  TestBasicStackWords;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
