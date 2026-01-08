@@ -65,12 +65,16 @@ type
     procedure WordSpan;
     procedure WordExpect;
 
-    // Memory words (002.3)
+    // Memory words (002.3, 002.4)
     procedure WordFetch;
     procedure WordStore;
     procedure WordCFetch;
     procedure WordCStore;
     procedure WordPlusStore;
+    procedure WordFill;
+    procedure WordErase;
+    procedure WordCMove;
+    procedure WordCMoveGreater;
 
     // REPL / cold start (001.4)
     procedure InitPrimitives;
@@ -479,6 +483,58 @@ begin
   Addr := ZeroExtendAddr(PopDS);
   N := PopDS;
   StoreCell(Addr, FetchCell(Addr) + N);
+end;
+
+procedure TForth.WordFill;
+var
+  Val: Byte;
+  Len, Addr, I: Integer;
+begin
+  Val := Byte(TUCell(PopDS) and $FF);
+  Len := Integer(PopDS);
+  Addr := ZeroExtendAddr(PopDS);
+  if Len <= 0 then
+    Exit;
+  for I := 0 to Len - 1 do
+    CStore(Addr + I, Val);
+end;
+
+procedure TForth.WordErase;
+var
+  Len, Addr, I: Integer;
+begin
+  Len := Integer(PopDS);
+  Addr := ZeroExtendAddr(PopDS);
+  if Len <= 0 then
+    Exit;
+  for I := 0 to Len - 1 do
+    CStore(Addr + I, 0);
+end;
+
+procedure TForth.WordCMove;
+var
+  Len, Src, Dst, I: Integer;
+begin
+  Len := Integer(PopDS);
+  Src := ZeroExtendAddr(PopDS);
+  Dst := ZeroExtendAddr(PopDS);
+  if Len <= 0 then
+    Exit;
+  for I := 0 to Len - 1 do
+    CStore(Dst + I, CFetch(Src + I));
+end;
+
+procedure TForth.WordCMoveGreater;
+var
+  Len, Src, Dst, I: Integer;
+begin
+  Len := Integer(PopDS);
+  Src := ZeroExtendAddr(PopDS);
+  Dst := ZeroExtendAddr(PopDS);
+  if Len <= 0 then
+    Exit;
+  for I := Len - 1 downto 0 do
+    CStore(Dst + I, CFetch(Src + I));
 end;
 
 procedure TForth.InitPrimitives;
