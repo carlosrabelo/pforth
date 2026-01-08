@@ -253,6 +253,65 @@ begin
   end;
 end;
 
+procedure TestMemoryBlockOperations;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  I: Integer;
+  Ok: Boolean;
+begin
+  WriteLn('--- TestMemoryBlockOperations ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.PushDS(4000);
+    F.PushDS(5);
+    F.PushDS($AB);
+    F.WordFill;
+    Ok := True;
+    for I := 0 to 4 do
+      if F.CFetch(4000 + I) <> $AB then
+        Ok := False;
+    AssertTrue('FILL writes five bytes', Ok);
+    F.PushDS(4000);
+    F.PushDS(0);
+    F.PushDS($FF);
+    F.WordFill;
+    AssertTrue('FILL len 0 leaves first byte', F.CFetch(4000) = $AB);
+
+    F.PushDS(4000);
+    F.PushDS(3);
+    F.WordErase;
+    AssertTrue('ERASE clears byte 0', F.CFetch(4000) = 0);
+    AssertTrue('ERASE clears byte 2', F.CFetch(4002) = 0);
+    AssertTrue('ERASE leaves byte 3', F.CFetch(4003) = $AB);
+
+    F.CStore(5000, Ord('H'));
+    F.CStore(5001, Ord('I'));
+    F.CStore(5002, Ord('!'));
+    F.PushDS(5100);
+    F.PushDS(5000);
+    F.PushDS(3);
+    F.WordCMove;
+    AssertTrue('CMOVE dest[0]', F.CFetch(5100) = Ord('H'));
+    AssertTrue('CMOVE dest[2]', F.CFetch(5102) = Ord('!'));
+
+    { Overlapping forward-unsafe region: CMOVE> copies high to low. }
+    F.CStore(5200, 1);
+    F.CStore(5201, 2);
+    F.CStore(5202, 3);
+    F.PushDS(5201);
+    F.PushDS(5200);
+    F.PushDS(2);
+    F.WordCMoveGreater;
+    AssertTrue('CMOVE> overlap [1]', F.CFetch(5201) = 1);
+    AssertTrue('CMOVE> overlap [2]', F.CFetch(5202) = 2);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
 procedure TestCellAndByteAccessPrimitives;
 var
   F: TForth;
@@ -356,6 +415,7 @@ begin
   TestQuitAbortCold;
   TestMemoryModelAndEndianness;
   TestCellAndByteAccessPrimitives;
+  TestMemoryBlockOperations;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
