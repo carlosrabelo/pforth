@@ -76,6 +76,12 @@ type
     procedure WordCMove;
     procedure WordCMoveGreater;
 
+    // Stack words (003)
+    procedure WordDup;
+    procedure WordDrop;
+    procedure WordSwap;
+    procedure WordOver;
+
     // REPL / cold start (001.4)
     procedure InitPrimitives;
     procedure RequireModule(const ModuleName: String);
@@ -535,6 +541,37 @@ begin
     Exit;
   for I := Len - 1 downto 0 do
     CStore(Dst + I, CFetch(Src + I));
+end;
+
+procedure TForth.WordDup;
+begin
+  PushDS(PeekDS);
+end;
+
+procedure TForth.WordDrop;
+begin
+  PopDS;
+end;
+
+procedure TForth.WordSwap;
+var
+  A, B: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  PushDS(B);
+  PushDS(A);
+end;
+
+procedure TForth.WordOver;
+var
+  A, B: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  PushDS(A);
+  PushDS(B);
+  PushDS(A);
 end;
 
 procedure TForth.InitPrimitives;
