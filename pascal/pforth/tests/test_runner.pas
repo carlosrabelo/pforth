@@ -253,6 +253,80 @@ begin
   end;
 end;
 
+procedure TestDoubleStackWords;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+begin
+  WriteLn('--- TestDoubleStackWords ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.PushDS(1);
+    F.PushDS(2);
+    F.WordTwoDup;
+    AssertTrue('2DUP d', F.PopDS = 2);
+    AssertTrue('2DUP c', F.PopDS = 1);
+    AssertTrue('2DUP b', F.PopDS = 2);
+    AssertTrue('2DUP a', F.PopDS = 1);
+
+    F.PushDS(3);
+    F.PushDS(4);
+    F.WordTwoDrop;
+    AssertTrue('2DROP empty', F.DepthDS = 0);
+
+    F.PushDS(1);
+    F.PushDS(2);
+    F.PushDS(3);
+    F.PushDS(4);
+    F.WordTwoSwap;
+    AssertTrue('2SWAP top 2', F.PopDS = 2);
+    AssertTrue('2SWAP 1', F.PopDS = 1);
+    AssertTrue('2SWAP 4', F.PopDS = 4);
+    AssertTrue('2SWAP 3', F.PopDS = 3);
+
+    F.PushDS(1);
+    F.PushDS(2);
+    F.PushDS(3);
+    F.PushDS(4);
+    F.WordTwoOver;
+    AssertTrue('2OVER top 2', F.PopDS = 2);
+    AssertTrue('2OVER 1', F.PopDS = 1);
+    AssertTrue('2OVER 4', F.PopDS = 4);
+    AssertTrue('2OVER 3', F.PopDS = 3);
+    AssertTrue('2OVER 2', F.PopDS = 2);
+    AssertTrue('2OVER bot 1', F.PopDS = 1);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
+procedure TestReturnStackWords;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+begin
+  WriteLn('--- TestReturnStackWords ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.PushDS(42);
+    F.WordToR;
+    AssertTrue('>R clears DS', F.DepthDS = 0);
+    AssertTrue('>R depth RS', F.DepthRS = 1);
+    F.WordRFetch;
+    AssertTrue('R@ copies', F.PopDS = 42);
+    AssertTrue('R@ leaves RS', F.DepthRS = 1);
+    F.WordRFrom;
+    AssertTrue('R> value', F.PopDS = 42);
+    AssertTrue('R> clears RS', F.DepthRS = 0);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
 procedure TestShuffleStackWords;
 var
   F: TForth;
@@ -520,6 +594,7 @@ begin
   TestMemoryBlockOperations;
   TestBasicStackWords;
   TestShuffleStackWords;
+  TestDoubleStackWords;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
