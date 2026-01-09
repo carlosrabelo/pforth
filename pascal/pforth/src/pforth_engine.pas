@@ -86,6 +86,13 @@ type
     procedure WordNRot;
     procedure WordNip;
     procedure WordTuck;
+    procedure WordTwoDup;
+    procedure WordTwoDrop;
+    procedure WordTwoSwap;
+    procedure WordTwoOver;
+    procedure WordToR;
+    procedure WordRFrom;
+    procedure WordRFetch;
 
     // REPL / cold start (001.4)
     procedure InitPrimitives;
@@ -630,6 +637,69 @@ begin
   PushDS(B);
   PushDS(A);
   PushDS(B);
+end;
+
+procedure TForth.WordTwoDup;
+var
+  A, B: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  PushDS(A);
+  PushDS(B);
+  PushDS(A);
+  PushDS(B);
+end;
+
+procedure TForth.WordTwoDrop;
+begin
+  PopDS;
+  PopDS;
+end;
+
+procedure TForth.WordTwoSwap;
+var
+  A, B, C, D: TCell;
+begin
+  D := PopDS;
+  C := PopDS;
+  B := PopDS;
+  A := PopDS;
+  PushDS(C);
+  PushDS(D);
+  PushDS(A);
+  PushDS(B);
+end;
+
+procedure TForth.WordTwoOver;
+var
+  A, B, C, D: TCell;
+begin
+  D := PopDS;
+  C := PopDS;
+  B := PopDS;
+  A := PopDS;
+  PushDS(A);
+  PushDS(B);
+  PushDS(C);
+  PushDS(D);
+  PushDS(A);
+  PushDS(B);
+end;
+
+procedure TForth.WordToR;
+begin
+  PushRS(PopDS);
+end;
+
+procedure TForth.WordRFrom;
+begin
+  PushDS(PopRS);
+end;
+
+procedure TForth.WordRFetch;
+begin
+  PushDS(PeekRS);
 end;
 
 procedure TForth.InitPrimitives;
