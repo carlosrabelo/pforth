@@ -253,6 +253,58 @@ begin
   end;
 end;
 
+procedure TestShuffleStackWords;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+begin
+  WriteLn('--- TestShuffleStackWords ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.PushDS(0);
+    F.WordQDup;
+    AssertTrue('?DUP zero stays single', F.DepthDS = 1);
+    AssertTrue('?DUP zero value', F.PopDS = 0);
+    F.PushDS(5);
+    F.WordQDup;
+    AssertTrue('?DUP non-zero depth', F.DepthDS = 2);
+    AssertTrue('?DUP non-zero top', F.PopDS = 5);
+    AssertTrue('?DUP non-zero second', F.PopDS = 5);
+
+    F.PushDS(10);
+    F.PushDS(20);
+    F.PushDS(30);
+    F.WordRot;
+    AssertTrue('ROT top 10', F.PopDS = 10);
+    AssertTrue('ROT mid 30', F.PopDS = 30);
+    AssertTrue('ROT bot 20', F.PopDS = 20);
+
+    F.PushDS(10);
+    F.PushDS(20);
+    F.PushDS(30);
+    F.WordNRot;
+    AssertTrue('-ROT top 20', F.PopDS = 20);
+    AssertTrue('-ROT mid 10', F.PopDS = 10);
+    AssertTrue('-ROT bot 30', F.PopDS = 30);
+
+    F.PushDS(10);
+    F.PushDS(20);
+    F.WordNip;
+    AssertTrue('NIP leaves 20', F.PopDS = 20);
+
+    F.PushDS(10);
+    F.PushDS(20);
+    F.WordTuck;
+    AssertTrue('TUCK top 20', F.PopDS = 20);
+    AssertTrue('TUCK mid 10', F.PopDS = 10);
+    AssertTrue('TUCK bot 20', F.PopDS = 20);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
 procedure TestBasicStackWords;
 var
   F: TForth;
@@ -467,6 +519,7 @@ begin
   TestCellAndByteAccessPrimitives;
   TestMemoryBlockOperations;
   TestBasicStackWords;
+  TestShuffleStackWords;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
