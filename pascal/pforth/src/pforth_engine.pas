@@ -81,6 +81,11 @@ type
     procedure WordDrop;
     procedure WordSwap;
     procedure WordOver;
+    procedure WordQDup;
+    procedure WordRot;
+    procedure WordNRot;
+    procedure WordNip;
+    procedure WordTuck;
 
     // REPL / cold start (001.4)
     procedure InitPrimitives;
@@ -572,6 +577,59 @@ begin
   PushDS(A);
   PushDS(B);
   PushDS(A);
+end;
+
+procedure TForth.WordQDup;
+var
+  V: TCell;
+begin
+  V := PeekDS;
+  if V <> 0 then
+    PushDS(V);
+end;
+
+procedure TForth.WordRot;
+var
+  A, B, C: TCell;
+begin
+  C := PopDS;
+  B := PopDS;
+  A := PopDS;
+  PushDS(B);
+  PushDS(C);
+  PushDS(A);
+end;
+
+procedure TForth.WordNRot;
+var
+  A, B, C: TCell;
+begin
+  C := PopDS;
+  B := PopDS;
+  A := PopDS;
+  PushDS(C);
+  PushDS(A);
+  PushDS(B);
+end;
+
+procedure TForth.WordNip;
+var
+  B: TCell;
+begin
+  B := PopDS;
+  PopDS;
+  PushDS(B);
+end;
+
+procedure TForth.WordTuck;
+var
+  A, B: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  PushDS(B);
+  PushDS(A);
+  PushDS(B);
 end;
 
 procedure TForth.InitPrimitives;
