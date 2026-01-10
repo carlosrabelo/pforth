@@ -94,6 +94,15 @@ type
     procedure WordRFrom;
     procedure WordRFetch;
 
+    // Arithmetic (004.1)
+    procedure WordPlus;
+    procedure WordMinus;
+    procedure WordMultiply;
+    procedure WordSlashMod;
+    procedure WordSlash;
+    procedure WordMod;
+    procedure WordNegate;
+
     // REPL / cold start (001.4)
     procedure InitPrimitives;
     procedure RequireModule(const ModuleName: String);
@@ -463,6 +472,19 @@ begin
   Result := Integer(TUCell(V));
 end;
 
+function WrapCell(V: Integer): TCell;
+begin
+  Result := TCell(Word(V and $FFFF));
+end;
+
+function FlagCell(Cond: Boolean): TCell;
+begin
+  if Cond then
+    Result := -1
+  else
+    Result := 0;
+end;
+
 procedure TForth.WordFetch;
 begin
   PushDS(FetchCell(ZeroExtendAddr(PopDS)));
@@ -700,6 +722,75 @@ end;
 procedure TForth.WordRFetch;
 begin
   PushDS(PeekRS);
+end;
+
+procedure TForth.WordPlus;
+var
+  A, B: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  PushDS(WrapCell(Integer(A) + Integer(B)));
+end;
+
+procedure TForth.WordMinus;
+var
+  A, B: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  PushDS(WrapCell(Integer(A) - Integer(B)));
+end;
+
+procedure TForth.WordMultiply;
+var
+  A, B: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  PushDS(WrapCell(Integer(A) * Integer(B)));
+end;
+
+procedure TForth.WordSlashMod;
+var
+  A, B, Quot, Rem: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  if B = 0 then
+    raise EForthError.Create('DIVISION BY ZERO');
+  Quot := WrapCell(Integer(A) div Integer(B));
+  Rem := WrapCell(Integer(A) - Integer(Quot) * Integer(B));
+  PushDS(Rem);
+  PushDS(Quot);
+end;
+
+procedure TForth.WordSlash;
+var
+  A, B: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  if B = 0 then
+    raise EForthError.Create('DIVISION BY ZERO');
+  PushDS(WrapCell(Integer(A) div Integer(B)));
+end;
+
+procedure TForth.WordMod;
+var
+  A, B, Quot: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  if B = 0 then
+    raise EForthError.Create('DIVISION BY ZERO');
+  Quot := WrapCell(Integer(A) div Integer(B));
+  PushDS(WrapCell(Integer(A) - Integer(Quot) * Integer(B)));
+end;
+
+procedure TForth.WordNegate;
+begin
+  PushDS(WrapCell(-Integer(PopDS)));
 end;
 
 procedure TForth.InitPrimitives;

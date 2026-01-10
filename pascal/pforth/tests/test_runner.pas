@@ -302,6 +302,70 @@ begin
   end;
 end;
 
+procedure TestSignedArithmetic;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  Raised: Boolean;
+begin
+  WriteLn('--- TestSignedArithmetic ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.PushDS(2);
+    F.PushDS(3);
+    F.WordPlus;
+    AssertTrue('2 3 +', F.PopDS = 5);
+
+    F.PushDS(10);
+    F.PushDS(4);
+    F.WordMinus;
+    AssertTrue('10 4 -', F.PopDS = 6);
+
+    F.PushDS(6);
+    F.PushDS(7);
+    F.WordMultiply;
+    AssertTrue('6 7 *', F.PopDS = 42);
+
+    F.PushDS(14);
+    F.PushDS(3);
+    F.WordSlashMod;
+    AssertTrue('/MOD quot 4', F.PopDS = 4);
+    AssertTrue('/MOD rem 2', F.PopDS = 2);
+
+    F.PushDS(14);
+    F.PushDS(3);
+    F.WordSlash;
+    AssertTrue('14 3 /', F.PopDS = 4);
+
+    F.PushDS(14);
+    F.PushDS(3);
+    F.WordMod;
+    AssertTrue('14 3 MOD', F.PopDS = 2);
+
+    F.PushDS(5);
+    F.WordNegate;
+    AssertTrue('NEGATE 5', F.PopDS = -5);
+
+    Raised := False;
+    try
+      F.PushDS(1);
+      F.PushDS(0);
+      F.WordSlashMod;
+    except
+      on E: EForthError do
+      begin
+        Raised := True;
+        AssertTrue('/MOD zero msg', E.Message = 'DIVISION BY ZERO');
+      end;
+    end;
+    AssertTrue('/MOD zero raises', Raised);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
 procedure TestReturnStackWords;
 var
   F: TForth;
@@ -596,6 +660,7 @@ begin
   TestShuffleStackWords;
   TestDoubleStackWords;
   TestReturnStackWords;
+  TestSignedArithmetic;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
