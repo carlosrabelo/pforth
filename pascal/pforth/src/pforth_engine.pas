@@ -111,6 +111,10 @@ type
     procedure WordAbs;
     procedure WordMin;
     procedure WordMax;
+    procedure WordAnd;
+    procedure WordOr;
+    procedure WordXor;
+    procedure WordInvert;
 
     // REPL / cold start (001.4)
     procedure InitPrimitives;
@@ -872,6 +876,52 @@ begin
   else
     PushDS(B);
 end;
+
+procedure TForth.WordAnd;
+var
+  A, B: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  PushDS(TCell(Word(A) and Word(B)));
+end;
+
+procedure TForth.WordOr;
+var
+  A, B: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  PushDS(TCell(Word(A) or Word(B)));
+end;
+
+procedure TForth.WordXor;
+var
+  A, B: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  PushDS(TCell(Word(A) xor Word(B)));
+end;
+
+procedure TForth.WordInvert;
+begin
+  PushDS(TCell(not Word(PopDS)));
+end;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 procedure TForth.InitPrimitives;
 begin
