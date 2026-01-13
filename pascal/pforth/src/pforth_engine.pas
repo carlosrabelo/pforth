@@ -94,7 +94,7 @@ type
     procedure WordRFrom;
     procedure WordRFetch;
 
-    // Arithmetic (004.1)
+    // Arithmetic and logic (004)
     procedure WordPlus;
     procedure WordMinus;
     procedure WordMultiply;
@@ -102,6 +102,15 @@ type
     procedure WordSlash;
     procedure WordMod;
     procedure WordNegate;
+    procedure WordOnePlus;
+    procedure WordOneMinus;
+    procedure WordTwoPlus;
+    procedure WordTwoMinus;
+    procedure WordTwoStar;
+    procedure WordTwoSlash;
+    procedure WordAbs;
+    procedure WordMin;
+    procedure WordMax;
 
     // REPL / cold start (001.4)
     procedure InitPrimitives;
@@ -791,6 +800,77 @@ end;
 procedure TForth.WordNegate;
 begin
   PushDS(WrapCell(-Integer(PopDS)));
+end;
+
+procedure TForth.WordOnePlus;
+begin
+  PushDS(WrapCell(Integer(PopDS) + 1));
+end;
+
+procedure TForth.WordOneMinus;
+begin
+  PushDS(WrapCell(Integer(PopDS) - 1));
+end;
+
+procedure TForth.WordTwoPlus;
+begin
+  PushDS(WrapCell(Integer(PopDS) + 2));
+end;
+
+procedure TForth.WordTwoMinus;
+begin
+  PushDS(WrapCell(Integer(PopDS) - 2));
+end;
+
+procedure TForth.WordTwoStar;
+begin
+  PushDS(WrapCell(Integer(PopDS) shl 1));
+end;
+
+procedure TForth.WordTwoSlash;
+var
+  W: Word;
+begin
+  W := Word(PopDS);
+  if (W and $8000) <> 0 then
+    PushDS(TCell((W shr 1) or $8000))
+  else
+    PushDS(TCell(W shr 1));
+end;
+
+procedure TForth.WordAbs;
+var
+  N: TCell;
+begin
+  N := PopDS;
+  if N < 0 then
+    PushDS(WrapCell(-Integer(N)))
+  else
+    PushDS(N);
+end;
+
+procedure TForth.WordMin;
+var
+  A, B: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  if A < B then
+    PushDS(A)
+  else
+    PushDS(B);
+end;
+
+procedure TForth.WordMax;
+var
+  A, B: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  if A > B then
+    PushDS(A)
+  else
+    PushDS(B);
 end;
 
 procedure TForth.InitPrimitives;
