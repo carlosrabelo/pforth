@@ -302,6 +302,52 @@ begin
   end;
 end;
 
+procedure TestScalingHelpers;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+begin
+  WriteLn('--- TestScalingHelpers ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.PushDS(10);
+    F.WordOnePlus;
+    AssertTrue('1+', F.PopDS = 11);
+    F.PushDS(10);
+    F.WordOneMinus;
+    AssertTrue('1-', F.PopDS = 9);
+    F.PushDS(10);
+    F.WordTwoPlus;
+    AssertTrue('2+', F.PopDS = 12);
+    F.PushDS(10);
+    F.WordTwoMinus;
+    AssertTrue('2-', F.PopDS = 8);
+    F.PushDS(5);
+    F.WordTwoStar;
+    AssertTrue('2*', F.PopDS = 10);
+    F.PushDS(-4);
+    F.WordTwoSlash;
+    AssertTrue('2/ neg', F.PopDS = -2);
+    F.PushDS(-7);
+    F.WordAbs;
+    AssertTrue('ABS', F.PopDS = 7);
+    F.PushDS(3);
+    F.PushDS(8);
+    F.WordMin;
+    AssertTrue('MIN', F.PopDS = 3);
+    F.PushDS(3);
+    F.PushDS(8);
+    F.WordMax;
+    AssertTrue('MAX', F.PopDS = 8);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
+
+
 procedure TestSignedArithmetic;
 var
   F: TForth;
@@ -661,6 +707,7 @@ begin
   TestDoubleStackWords;
   TestReturnStackWords;
   TestSignedArithmetic;
+  TestScalingHelpers;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
