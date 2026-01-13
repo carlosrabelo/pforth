@@ -346,6 +346,35 @@ begin
   end;
 end;
 
+procedure TestBitwiseLogic;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+begin
+  WriteLn('--- TestBitwiseLogic ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.PushDS($0F0F);
+    F.PushDS($00FF);
+    F.WordAnd;
+    AssertTrue('AND', F.PopDS = $000F);
+    F.PushDS($0F00);
+    F.PushDS($00F0);
+    F.WordOr;
+    AssertTrue('OR', F.PopDS = $0FF0);
+    F.PushDS($0FF0);
+    F.PushDS($00FF);
+    F.WordXor;
+    AssertTrue('XOR', F.PopDS = $0F0F);
+    F.PushDS(0);
+    F.WordInvert;
+    AssertTrue('INVERT 0', F.PopDS = -1);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
 
 
 procedure TestSignedArithmetic;
@@ -708,6 +737,7 @@ begin
   TestReturnStackWords;
   TestSignedArithmetic;
   TestScalingHelpers;
+  TestBitwiseLogic;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
