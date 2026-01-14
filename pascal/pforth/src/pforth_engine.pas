@@ -115,6 +115,20 @@ type
     procedure WordOr;
     procedure WordXor;
     procedure WordInvert;
+    procedure WordEquals;
+    procedure WordNotEquals;
+    procedure WordLess;
+    procedure WordGreater;
+    procedure WordLessEqual;
+    procedure WordGreaterEqual;
+    procedure WordZeroEquals;
+    procedure WordZeroNotEquals;
+    procedure WordZeroLess;
+    procedure WordZeroGreater;
+    procedure WordULess;
+    procedure WordUGreater;
+    procedure WordULessEqual;
+    procedure WordUGreaterEqual;
 
     // REPL / cold start (001.4)
     procedure InitPrimitives;
@@ -909,19 +923,115 @@ begin
   PushDS(TCell(not Word(PopDS)));
 end;
 
+procedure TForth.WordEquals;
+var
+  A, B: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  PushDS(FlagCell(A = B));
+end;
 
+procedure TForth.WordNotEquals;
+var
+  A, B: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  PushDS(FlagCell(A <> B));
+end;
 
+procedure TForth.WordLess;
+var
+  A, B: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  PushDS(FlagCell(A < B));
+end;
 
+procedure TForth.WordGreater;
+var
+  A, B: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  PushDS(FlagCell(A > B));
+end;
 
+procedure TForth.WordLessEqual;
+var
+  A, B: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  PushDS(FlagCell(A <= B));
+end;
 
+procedure TForth.WordGreaterEqual;
+var
+  A, B: TCell;
+begin
+  B := PopDS;
+  A := PopDS;
+  PushDS(FlagCell(A >= B));
+end;
 
+procedure TForth.WordZeroEquals;
+begin
+  PushDS(FlagCell(PopDS = 0));
+end;
 
+procedure TForth.WordZeroNotEquals;
+begin
+  PushDS(FlagCell(PopDS <> 0));
+end;
 
+procedure TForth.WordZeroLess;
+begin
+  PushDS(FlagCell(PopDS < 0));
+end;
 
+procedure TForth.WordZeroGreater;
+begin
+  PushDS(FlagCell(PopDS > 0));
+end;
 
+procedure TForth.WordULess;
+var
+  A, B: Word;
+begin
+  B := Word(PopDS);
+  A := Word(PopDS);
+  PushDS(FlagCell(A < B));
+end;
 
+procedure TForth.WordUGreater;
+var
+  A, B: Word;
+begin
+  B := Word(PopDS);
+  A := Word(PopDS);
+  PushDS(FlagCell(A > B));
+end;
 
+procedure TForth.WordULessEqual;
+var
+  A, B: Word;
+begin
+  B := Word(PopDS);
+  A := Word(PopDS);
+  PushDS(FlagCell(A <= B));
+end;
 
+procedure TForth.WordUGreaterEqual;
+var
+  A, B: Word;
+begin
+  B := Word(PopDS);
+  A := Word(PopDS);
+  PushDS(FlagCell(A >= B));
+end;
 
 procedure TForth.InitPrimitives;
 begin
