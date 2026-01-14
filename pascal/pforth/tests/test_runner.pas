@@ -376,6 +376,72 @@ begin
   end;
 end;
 
+procedure TestComparisonFlags;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+begin
+  WriteLn('--- TestComparisonFlags ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.PushDS(5);
+    F.PushDS(5);
+    F.WordEquals;
+    AssertTrue('=', F.PopDS = -1);
+    F.PushDS(5);
+    F.PushDS(6);
+    F.WordNotEquals;
+    AssertTrue('<>', F.PopDS = -1);
+    F.PushDS(3);
+    F.PushDS(8);
+    F.WordLess;
+    AssertTrue('<', F.PopDS = -1);
+    F.PushDS(8);
+    F.PushDS(3);
+    F.WordGreater;
+    AssertTrue('>', F.PopDS = -1);
+    F.PushDS(3);
+    F.PushDS(3);
+    F.WordLessEqual;
+    AssertTrue('<=', F.PopDS = -1);
+    F.PushDS(3);
+    F.PushDS(3);
+    F.WordGreaterEqual;
+    AssertTrue('>=', F.PopDS = -1);
+    F.PushDS(0);
+    F.WordZeroEquals;
+    AssertTrue('0=', F.PopDS = -1);
+    F.PushDS(1);
+    F.WordZeroNotEquals;
+    AssertTrue('0<>', F.PopDS = -1);
+    F.PushDS(-1);
+    F.WordZeroLess;
+    AssertTrue('0<', F.PopDS = -1);
+    F.PushDS(1);
+    F.WordZeroGreater;
+    AssertTrue('0>', F.PopDS = -1);
+    F.PushDS(-1);
+    F.PushDS(1);
+    F.WordULess;
+    AssertTrue('U< high-bit', F.PopDS = 0);
+    F.PushDS(-1);
+    F.PushDS(1);
+    F.WordUGreater;
+    AssertTrue('U> high-bit', F.PopDS = -1);
+    F.PushDS(-1);
+    F.PushDS(-1);
+    F.WordULessEqual;
+    AssertTrue('U<=', F.PopDS = -1);
+    F.PushDS(1);
+    F.PushDS(-1);
+    F.WordUGreaterEqual;
+    AssertTrue('U>=', F.PopDS = 0);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
 
 procedure TestSignedArithmetic;
 var
@@ -738,6 +804,7 @@ begin
   TestSignedArithmetic;
   TestScalingHelpers;
   TestBitwiseLogic;
+  TestComparisonFlags;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
