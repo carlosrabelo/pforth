@@ -9,12 +9,29 @@ uses
 
 type
   TStringSet = array of String;
+  TWordKind = (wkPrimitive, wkColon, wkConstant, wkVariable, wkCreate);
+  TForthWordCode = procedure of object;
+
+  TForthWord = record
+    Name: String;
+    Immediate: Boolean;
+    Kind: TWordKind;
+    Code: TForthWordCode;
+    Body: TCellStack;
+    PFA: Integer;
+  end;
+
+  TForthWordArray = array of TForthWord;
 
   TForth = class
   public
     DS: TCellStack;
     RS: TCellStack;
     Memory: TMemory;
+    Words: TForthWordArray;
+    Latest: Integer;
+    CurrentBody: TCellStack;
+    IP: Integer;
     Running: Boolean;
     Interrupted: Boolean;
     State: Boolean;
@@ -130,6 +147,34 @@ type
     procedure WordULessEqual;
     procedure WordUGreaterEqual;
 
+    // Dictionary (005)
+    function DefineWord(const AName: String; AKind: TWordKind; ACode: TForthWordCode;
+      const ABody: TCellStack; AImmediate: Boolean): Integer;
+    function DefinePrimitive(const AName: String; ACode: TForthWordCode): Integer;
+    function DefineImmediate(const AName: String; ACode: TForthWordCode): Integer;
+    function Lookup(const AName: String; out W: TForthWord): Boolean;
+    function FindXT(const AName: String; out XT: Integer): Boolean;
+    function ParseWord(out Token: String): Boolean;
+    procedure WordFind;
+    procedure WordTick;
+    procedure WordToBody;
+    function Here: Integer;
+    procedure Allot(N: Integer);
+    procedure Comma(Val: TCell);
+    procedure CComma(Val: Byte);
+    procedure WordDP;
+    procedure WordHere;
+    procedure WordPAD;
+    procedure WordAllot;
+    procedure WordComma;
+    procedure WordCComma;
+    procedure ExecuteWord(XT: Integer);
+    procedure WordExecute;
+    procedure WordExit;
+    procedure WordCreate;
+    procedure WordConstant;
+    procedure WordVariable;
+
     // REPL / cold start (001.4)
     procedure InitPrimitives;
     procedure RequireModule(const ModuleName: String);
@@ -149,11 +194,15 @@ begin
   SetLength(RS, 0);
   SetLength(CompileList, 0);
   SetLength(LoadedModules, 0);
+  SetLength(Words, 0);
+  SetLength(CurrentBody, 0);
   FillChar(Memory, SizeOf(Memory), 0);
   Running := True;
   Interrupted := False;
   State := False;
   CompilingXT := -1;
+  Latest := -1;
+  IP := 0;
   InputStream := AInput;
   OutputStream := AOutput;
 
@@ -1031,6 +1080,281 @@ begin
   B := Word(PopDS);
   A := Word(PopDS);
   PushDS(FlagCell(A >= B));
+end;
+
+function TForth.DefineWord(const AName: String; AKind: TWordKind; ACode: TForthWordCode;
+  const ABody: TCellStack; AImmediate: Boolean): Integer;
+var
+  Idx: Integer;
+  W: TForthWord;
+begin
+  Idx := Length(Words);
+  W.Name := UpperCase(AName);
+  W.Immediate := AImmediate;
+  W.Kind := AKind;
+  W.Code := ACode;
+  W.Body := Copy(ABody);
+  W.PFA := Here;
+  SetLength(Words, Idx + 1);
+  Words[Idx] := W;
+  Latest := Idx;
+  Result := Idx;
+end;
+
+function TForth.DefinePrimitive(const AName: String; ACode: TForthWordCode): Integer;
+var
+  Empty: TCellStack;
+begin
+  SetLength(Empty, 0);
+  Result := DefineWord(AName, wkPrimitive, ACode, Empty, False);
+end;
+
+function TForth.DefineImmediate(const AName: String; ACode: TForthWordCode): Integer;
+var
+  Empty: TCellStack;
+begin
+  SetLength(Empty, 0);
+  Result := DefineWord(AName, wkPrimitive, ACode, Empty, True);
+end;
+
+function TForth.Lookup(const AName: String; out W: TForthWord): Boolean;
+var
+  XT: Integer;
+begin
+  Result := FindXT(AName, XT);
+  if Result then
+    W := Words[XT];
+end;
+
+function TForth.FindXT(const AName: String; out XT: Integer): Boolean;
+var
+  Upper: String;
+  I: Integer;
+begin
+  Upper := UpperCase(AName);
+  for I := High(Words) downto 0 do
+    if Words[I].Name = Upper then
+    begin
+      XT := I;
+      Result := True;
+      Exit;
+    end;
+  XT := -1;
+  Result := False;
+end;
+
+function TForth.ParseWord(out Token: String): Boolean;
+var
+  Start: Integer;
+begin
+  while (IN_PTR <= Length(TIB)) and (TIB[IN_PTR] in [' ', #9, #13, #10]) do
+    Inc(IN_PTR);
+  if IN_PTR > Length(TIB) then
+  begin
+    Token := '';
+    Result := False;
+    Exit;
+  end;
+  Start := IN_PTR;
+  while (IN_PTR <= Length(TIB)) and not (TIB[IN_PTR] in [' ', #9, #13, #10]) do
+    Inc(IN_PTR);
+  Token := Copy(TIB, Start, IN_PTR - Start);
+  Result := True;
+end;
+
+procedure TForth.WordFind;
+var
+  Addr, Len, I: Integer;
+  Name: String;
+  W: TForthWord;
+  XT: Integer;
+begin
+  Addr := ZeroExtendAddr(PopDS);
+  Len := Integer(CFetch(Addr));
+  Name := '';
+  for I := 0 to Len - 1 do
+    Name := Name + Chr(CFetch(Addr + 1 + I));
+  Name := UpperCase(Name);
+  if not Lookup(Name, W) then
+  begin
+    PushDS(TCell(Addr));
+    PushDS(0);
+    Exit;
+  end;
+  FindXT(Name, XT);
+  PushDS(TCell(XT));
+  if W.Immediate then
+    PushDS(1)
+  else
+    PushDS(-1);
+end;
+
+procedure TForth.WordTick;
+var
+  Token: String;
+  XT: Integer;
+begin
+  if not ParseWord(Token) then
+    raise EForthError.Create('WORD NAME EXPECTED');
+  if not FindXT(Token, XT) then
+    raise EForthError.Create('WORD NOT FOUND: ' + Token);
+  PushDS(TCell(XT));
+end;
+
+procedure TForth.WordToBody;
+var
+  XT: Integer;
+begin
+  XT := Integer(PopDS);
+  if (XT >= 0) and (XT < Length(Words)) and (Words[XT].PFA <> 0) then
+    PushDS(TCell(Words[XT].PFA))
+  else
+    PushDS(TCell(XT + 2));
+end;
+
+function TForth.Here: Integer;
+begin
+  Result := Integer(FetchCell(DP_ADDR));
+end;
+
+procedure TForth.Allot(N: Integer);
+begin
+  StoreCell(DP_ADDR, TCell(Here + N));
+end;
+
+procedure TForth.Comma(Val: TCell);
+begin
+  StoreCell(Here, Val);
+  Allot(2);
+end;
+
+procedure TForth.CComma(Val: Byte);
+begin
+  CStore(Here, Val);
+  Allot(1);
+end;
+
+procedure TForth.WordDP;
+begin
+  PushDS(TCell(DP_ADDR));
+end;
+
+procedure TForth.WordHere;
+begin
+  PushDS(TCell(Here));
+end;
+
+procedure TForth.WordPAD;
+begin
+  PushDS(TCell(Here + 68));
+end;
+
+procedure TForth.WordAllot;
+begin
+  Allot(Integer(PopDS));
+end;
+
+procedure TForth.WordComma;
+begin
+  Comma(PopDS);
+end;
+
+procedure TForth.WordCComma;
+begin
+  CComma(Byte(TUCell(PopDS) and $FF));
+end;
+
+procedure TForth.ExecuteWord(XT: Integer);
+var
+  W: TForthWord;
+  SavedBody: TCellStack;
+  SavedIP: Integer;
+  Nxt: Integer;
+begin
+  if (XT < 0) or (XT >= Length(Words)) then
+    raise EForthError.Create('INVALID EXECUTION TOKEN: ' + IntToStr(XT));
+  W := Words[XT];
+  case W.Kind of
+    wkPrimitive:
+      if Assigned(W.Code) then
+        W.Code();
+    wkConstant:
+      if Length(W.Body) > 0 then
+        PushDS(W.Body[0]);
+    wkVariable, wkCreate:
+      PushDS(TCell(W.PFA));
+    wkColon:
+      begin
+        SavedBody := CurrentBody;
+        SavedIP := IP;
+        try
+          CurrentBody := W.Body;
+          IP := 0;
+          while IP < Length(CurrentBody) do
+          begin
+            CheckInterrupt;
+            Nxt := Integer(CurrentBody[IP]);
+            Inc(IP);
+            ExecuteWord(Nxt);
+          end;
+        finally
+          CurrentBody := SavedBody;
+          IP := SavedIP;
+        end;
+      end;
+  end;
+end;
+
+procedure TForth.WordExecute;
+begin
+  ExecuteWord(Integer(PopDS));
+end;
+
+procedure TForth.WordExit;
+begin
+  IP := Length(CurrentBody);
+end;
+
+procedure TForth.WordCreate;
+var
+  Token: String;
+  Empty: TCellStack;
+begin
+  if not ParseWord(Token) then
+    raise EForthError.Create('WORD NAME EXPECTED');
+  SetLength(Empty, 0);
+  DefineWord(Token, wkCreate, nil, Empty, False);
+end;
+
+procedure TForth.WordConstant;
+var
+  Token: String;
+  N: TCell;
+  Body: TCellStack;
+begin
+  N := PopDS;
+  if not ParseWord(Token) then
+    raise EForthError.Create('WORD NAME EXPECTED');
+  SetLength(Body, 1);
+  Body[0] := N;
+  DefineWord(Token, wkConstant, nil, Body, False);
+end;
+
+procedure TForth.WordVariable;
+var
+  Token: String;
+  Empty: TCellStack;
+  PFA: Integer;
+begin
+  if not ParseWord(Token) then
+    raise EForthError.Create('WORD NAME EXPECTED');
+  PFA := Here;
+  StoreCell(PFA, 0);
+  Allot(2);
+  SetLength(Empty, 0);
+  DefineWord(Token, wkVariable, nil, Empty, False);
+  { DefineWord snapshots PFA via Here after allot — fix PFA to pre-allot address. }
+  Words[Latest].PFA := PFA;
 end;
 
 procedure TForth.InitPrimitives;
