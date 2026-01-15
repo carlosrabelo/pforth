@@ -376,6 +376,91 @@ begin
   end;
 end;
 
+procedure TestDictionaryFindTickBody;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  XT: Integer;
+  Raised: Boolean;
+begin
+  WriteLn('--- TestDictionaryFindTickBody ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.DefinePrimitive('DUP', @F.WordDup);
+    F.DefineImmediate('IF', @F.WordDrop);
+    AssertTrue('FindXT DUP', F.FindXT('dup', XT));
+    AssertTrue('XT is 0', XT = 0);
+
+    F.CStore(3000, 3);
+    F.CStore(3001, Ord('D'));
+    F.CStore(3002, Ord('U'));
+    F.CStore(3003, Ord('P'));
+    F.PushDS(3000);
+    F.WordFind;
+    AssertTrue('FIND flag -1', F.PopDS = -1);
+    AssertTrue('FIND xt', F.PopDS = 0);
+
+    F.CStore(3010, 2);
+    F.CStore(3011, Ord('I'));
+    F.CStore(3012, Ord('F'));
+    F.PushDS(3010);
+    F.WordFind;
+    AssertTrue('FIND immediate 1', F.PopDS = 1);
+    F.PopDS;
+
+    F.CStore(3020, 3);
+    F.CStore(3021, Ord('F'));
+    F.CStore(3022, Ord('O'));
+    F.CStore(3023, Ord('O'));
+    F.PushDS(3020);
+    F.WordFind;
+    AssertTrue('FIND miss flag 0', F.PopDS = 0);
+    AssertTrue('FIND miss addr', F.PopDS = 3020);
+
+    F.SetLine('DUP');
+    F.WordTick;
+    AssertTrue(''' DUP xt', F.PopDS = 0);
+
+    Raised := False;
+    try
+      F.SetLine('');
+      F.WordTick;
+    except
+      on E: EForthError do
+      begin
+        Raised := True;
+        AssertTrue('tick empty msg', E.Message = 'WORD NAME EXPECTED');
+      end;
+    end;
+    AssertTrue('tick empty raises', Raised);
+
+    Raised := False;
+    try
+      F.SetLine('NOSUCH');
+      F.WordTick;
+    except
+      on E: EForthError do
+      begin
+        Raised := True;
+        AssertTrue('tick missing msg', E.Message = 'WORD NOT FOUND: NOSUCH');
+      end;
+    end;
+    AssertTrue('tick missing raises', Raised);
+
+    F.PushDS(0);
+    F.WordToBody;
+    AssertTrue('>BODY uses PFA', F.PopDS = F.Words[0].PFA);
+
+    F.PushDS(-5);
+    F.WordToBody;
+    AssertTrue('>BODY fallback xt+2', F.PopDS = -3);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
 procedure TestComparisonFlags;
 var
   F: TForth;
@@ -805,6 +890,7 @@ begin
   TestScalingHelpers;
   TestBitwiseLogic;
   TestComparisonFlags;
+  TestDictionaryFindTickBody;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
