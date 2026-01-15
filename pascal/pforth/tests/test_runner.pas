@@ -1033,6 +1033,7 @@ begin
   TestDictionaryFindTickBody;
   TestDictionaryPointerComma;
   TestExecuteInnerInterpreter;
+  TestDefiningWords;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
