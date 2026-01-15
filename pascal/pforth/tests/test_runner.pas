@@ -376,6 +376,146 @@ begin
   end;
 end;
 
+procedure TestDictionaryPointerComma;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+begin
+  WriteLn('--- TestDictionaryPointerComma ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.WordHere;
+    AssertTrue('HERE starts 1024', F.PopDS = 1024);
+    F.WordDP;
+    AssertTrue('DP addr 1002', F.PopDS = 1002);
+    F.WordPAD;
+    AssertTrue('PAD is HERE+68', F.PopDS = 1024 + 68);
+
+    F.PushDS(10);
+    F.WordAllot;
+    F.WordHere;
+    AssertTrue('ALLOT 10', F.PopDS = 1034);
+
+    F.PushDS($1234);
+    F.WordComma;
+    AssertTrue('comma low', F.Memory[1034] = $34);
+    AssertTrue('comma high', F.Memory[1035] = $12);
+    F.WordHere;
+    AssertTrue('HERE after ,', F.PopDS = 1036);
+
+    F.PushDS(Ord('Z'));
+    F.WordCComma;
+    AssertTrue('C, byte', F.Memory[1036] = Ord('Z'));
+    F.WordHere;
+    AssertTrue('HERE after C,', F.PopDS = 1037);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
+procedure TestExecuteInnerInterpreter;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  Body: TCellStack;
+  Raised: Boolean;
+  XT, DupXT, ExitXT: Integer;
+begin
+  WriteLn('--- TestExecuteInnerInterpreter ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.DefinePrimitive('DUP', @F.WordDup);
+    F.DefinePrimitive('EXIT', @F.WordExit);
+    SetLength(Body, 1);
+    Body[0] := 99;
+    XT := F.DefineWord('NINETY', wkConstant, nil, Body, False);
+    F.PushDS(TCell(XT));
+    F.WordExecute;
+    AssertTrue('EXECUTE constant', F.PopDS = 99);
+
+    Raised := False;
+    try
+      F.ExecuteWord(9999);
+    except
+      on E: EForthError do
+      begin
+        Raised := True;
+        AssertTrue('bad XT msg', Pos('INVALID EXECUTION TOKEN:', E.Message) = 1);
+      end;
+    end;
+    AssertTrue('bad XT raises', Raised);
+
+    F.FindXT('DUP', DupXT);
+    F.FindXT('EXIT', ExitXT);
+    SetLength(Body, 3);
+    Body[0] := TCell(DupXT);
+    Body[1] := TCell(DupXT);
+    Body[2] := TCell(ExitXT);
+    XT := F.DefineWord('DD', wkColon, nil, Body, False);
+    F.PushDS(7);
+    F.ExecuteWord(XT);
+    AssertTrue('colon depth', F.DepthDS = 3);
+    AssertTrue('colon top', F.PopDS = 7);
+    AssertTrue('colon mid', F.PopDS = 7);
+    AssertTrue('colon bot', F.PopDS = 7);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
+procedure TestDefiningWords;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  XT: Integer;
+  Raised: Boolean;
+begin
+  WriteLn('--- TestDefiningWords ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.SetLine('WIDGET');
+    F.WordCreate;
+    AssertTrue('CREATE FindXT', F.FindXT('WIDGET', XT));
+    F.ExecuteWord(XT);
+    AssertTrue('CREATE pushes PFA', F.PopDS = F.Words[XT].PFA);
+
+    F.PushDS(42);
+    F.SetLine('ANSWER');
+    F.WordConstant;
+    F.FindXT('ANSWER', XT);
+    F.ExecuteWord(XT);
+    AssertTrue('CONSTANT value', F.PopDS = 42);
+
+    F.SetLine('COUNTER');
+    F.WordVariable;
+    F.FindXT('COUNTER', XT);
+    F.ExecuteWord(XT);
+    AssertTrue('VARIABLE addr', F.PopDS = F.Words[XT].PFA);
+    AssertTrue('VARIABLE cell 0', F.FetchCell(F.Words[XT].PFA) = 0);
+
+    Raised := False;
+    try
+      F.SetLine('');
+      F.WordCreate;
+    except
+      on E: EForthError do
+      begin
+        Raised := True;
+        AssertTrue('CREATE empty msg', E.Message = 'WORD NAME EXPECTED');
+      end;
+    end;
+    AssertTrue('CREATE empty raises', Raised);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
 procedure TestDictionaryFindTickBody;
 var
   F: TForth;
@@ -891,6 +1031,7 @@ begin
   TestBitwiseLogic;
   TestComparisonFlags;
   TestDictionaryFindTickBody;
+  TestDictionaryPointerComma;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
