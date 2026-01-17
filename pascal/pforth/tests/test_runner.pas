@@ -467,6 +467,146 @@ begin
   end;
 end;
 
+procedure TestWordNumberBase;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  Num: TCell;
+begin
+  WriteLn('--- TestWordNumberBase ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.WordBase;
+    AssertTrue('BASE addr', F.PopDS = 1004);
+    AssertTrue('ParseNumber 42', F.ParseNumber('42', Num) and (Num = 42));
+    AssertTrue('ParseNumber $10', F.ParseNumber('$10', Num) and (Num = 16));
+    AssertTrue('ParseNumber %101', F.ParseNumber('%101', Num) and (Num = 5));
+    AssertTrue('ParseNumber -3', F.ParseNumber('-3', Num) and (Num = -3));
+    F.StoreCell(1004, 16);
+    AssertTrue('base 16 FF', F.ParseNumber('FF', Num) and (Num = 255));
+    F.StoreCell(1004, 10);
+
+    F.SetLine('HELLO');
+    F.PushDS(Ord(' '));
+    F.WordWord;
+    AssertTrue('WORD addr HERE', F.PeekDS = 1024);
+    AssertTrue('WORD count 5', F.CFetch(1024) = 5);
+    AssertTrue('WORD H', F.CFetch(1025) = Ord('H'));
+    AssertTrue('WORD trailing space', F.CFetch(1030) = Ord(' '));
+
+    F.PushDS(1024);
+    F.WordNumber;
+    AssertTrue('NUMBER fail flag', F.PopDS = 0);
+    AssertTrue('NUMBER fail n', F.PopDS = 0);
+
+    F.CStore(2000, 2);
+    F.CStore(2001, Ord('4'));
+    F.CStore(2002, Ord('2'));
+    F.PushDS(2000);
+    F.WordNumber;
+    AssertTrue('NUMBER ok flag', F.PopDS = -1);
+    AssertTrue('NUMBER ok n', F.PopDS = 42);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
+procedure TestInterpretAndLit;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  Raised: Boolean;
+begin
+  WriteLn('--- TestInterpretAndLit ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.DefinePrimitive('DUP', @F.WordDup);
+    F.InterpretLine('5 DUP');
+    AssertTrue('interpret 5 DUP depth', F.DepthDS = 2);
+    AssertTrue('interpret top', F.PopDS = 5);
+    AssertTrue('interpret second', F.PopDS = 5);
+
+    Raised := False;
+    try
+      F.InterpretLine('NOSUCHWORD');
+    except
+      on E: EForthError do
+      begin
+        Raised := True;
+        AssertTrue('unknown msg', E.Message = 'UNKNOWN WORD: NOSUCHWORD');
+      end;
+    end;
+    AssertTrue('unknown raises', Raised);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
+procedure TestCompilerStateWords;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+begin
+  WriteLn('--- TestCompilerStateWords ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.DefinePrimitive('DUP', @F.WordDup);
+    F.DefinePrimitive('LIT', @F.WordLIT);
+    F.WordState;
+    AssertTrue('STATE interpreting', F.PopDS = 0);
+    F.WordRightBracket;
+    F.WordState;
+    AssertTrue('STATE compiling', F.PopDS = -1);
+    F.PushDS(9);
+    F.WordLiteral;
+    AssertTrue('LITERAL compile len', Length(F.CompileList) = 2);
+    F.WordLeftBracket;
+    F.WordState;
+    AssertTrue('STATE after [', F.PopDS = 0);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
+procedure TestColonDefinitions;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  XT: Integer;
+begin
+  WriteLn('--- TestColonDefinitions ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.DefinePrimitive('DUP', @F.WordDup);
+    F.DefinePrimitive('EXIT', @F.WordExit);
+    F.DefinePrimitive('+', @F.WordPlus);
+    F.DefineImmediate(';', @F.WordSemicolon);
+    F.DefinePrimitive(':', @F.WordColon);
+    F.DefinePrimitive('IMMEDIATE', @F.WordImmediate);
+    F.DefineImmediate('RECURSE', @F.WordRecurse);
+
+    F.InterpretLine(': DOUBLE DUP + ;');
+    AssertTrue('colon FindXT', F.FindXT('DOUBLE', XT));
+    F.PushDS(6);
+    F.ExecuteWord(XT);
+    AssertTrue('DOUBLE 6', F.PopDS = 12);
+
+    F.InterpretLine(': MARKER ; IMMEDIATE');
+    F.FindXT('MARKER', XT);
+    AssertTrue('IMMEDIATE flag', F.Words[XT].Immediate);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
 procedure TestDefiningWords;
 var
   F: TForth;
@@ -1034,6 +1174,7 @@ begin
   TestDictionaryPointerComma;
   TestExecuteInnerInterpreter;
   TestDefiningWords;
+  TestWordNumberBase;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));

@@ -175,6 +175,28 @@ type
     procedure WordConstant;
     procedure WordVariable;
 
+    // Outer interpreter / compiler (006)
+    function GetBase: Integer;
+    function ParseNumber(const Token: String; out Value: TCell): Boolean;
+    procedure WordBase;
+    procedure WordWord;
+    procedure WordNumber;
+    procedure WordLIT;
+    procedure InterpretLoop;
+    procedure WordInterpret;
+    procedure WordState;
+    procedure WordLeftBracket;
+    procedure WordRightBracket;
+    procedure WordLiteral;
+    procedure WordCompile;
+    procedure WordBracketCompile;
+    procedure WordColon;
+    procedure WordSemicolon;
+    procedure WordImmediate;
+    procedure WordRecurse;
+    function EnsureLitXT: Integer;
+    function EnsureExitXT: Integer;
+
     // REPL / cold start (001.4)
     procedure InitPrimitives;
     procedure RequireModule(const ModuleName: String);
@@ -1357,9 +1379,302 @@ begin
   Words[Latest].PFA := PFA;
 end;
 
+function TForth.GetBase: Integer;
+begin
+  Result := Integer(FetchCell(BASE_ADDR));
+  if Result < 1 then
+    Result := 10;
+end;
+
+function TForth.ParseNumber(const Token: String; out Value: TCell): Boolean;
+var
+  Neg: Boolean;
+  Start, ParsedBase, I, Digit: Integer;
+  C: Char;
+  Acc: LongWord;
+begin
+  Result := False;
+  Value := 0;
+  if Length(Token) = 0 then
+    Exit;
+  Neg := False;
+  Start := 1;
+  if Token[1] = '-' then
+  begin
+    Neg := True;
+    Start := 2;
+  end
+  else if Token[1] = '+' then
+    Start := 2;
+  if Start > Length(Token) then
+    Exit;
+  ParsedBase := GetBase;
+  if Token[Start] = '$' then
+  begin
+    ParsedBase := 16;
+    Inc(Start);
+  end
+  else if Token[Start] = '%' then
+  begin
+    ParsedBase := 2;
+    Inc(Start);
+  end
+  else if Token[Start] = '#' then
+  begin
+    Inc(Start);
+    if (Start <= Length(Token)) and (Token[Start] = '#') then
+      Inc(Start);
+  end;
+  if Start > Length(Token) then
+    Exit;
+  Acc := 0;
+  for I := Start to Length(Token) do
+  begin
+    C := Token[I];
+    if (C >= '0') and (C <= '9') then
+      Digit := Ord(C) - Ord('0')
+    else if (C >= 'A') and (C <= 'F') then
+      Digit := Ord(C) - Ord('A') + 10
+    else if (C >= 'a') and (C <= 'f') then
+      Digit := Ord(C) - Ord('a') + 10
+    else
+      Exit;
+    if Digit >= ParsedBase then
+      Exit;
+    Acc := Acc * LongWord(ParsedBase) + LongWord(Digit);
+  end;
+  Value := TCell(Word(Acc and $FFFF));
+  if Neg then
+    Value := WrapCell(-Integer(Value));
+  Result := True;
+end;
+
+procedure TForth.WordBase;
+begin
+  PushDS(TCell(BASE_ADDR));
+end;
+
+procedure TForth.WordWord;
+var
+  Delim: Byte;
+  Dest, StartAddr, Count: Integer;
+begin
+  Delim := Byte(TUCell(PopDS) and $FF);
+  while (IN_PTR <= Length(TIB)) and (Byte(Ord(TIB[IN_PTR])) = Delim) do
+    Inc(IN_PTR);
+  Dest := Here;
+  if IN_PTR > Length(TIB) then
+  begin
+    CStore(Dest, 0);
+    PushDS(TCell(Dest));
+    Exit;
+  end;
+  StartAddr := Dest + 1;
+  Count := 0;
+  while (IN_PTR <= Length(TIB)) and (Byte(Ord(TIB[IN_PTR])) <> Delim) and
+    (TIB[IN_PTR] <> #13) and (TIB[IN_PTR] <> #10) do
+  begin
+    CStore(StartAddr + Count, Byte(Ord(TIB[IN_PTR])));
+    Inc(Count);
+    Inc(IN_PTR);
+  end;
+  CStore(Dest, Byte(Count));
+  CStore(StartAddr + Count, Ord(' '));
+  PushDS(TCell(Dest));
+end;
+
+procedure TForth.WordNumber;
+var
+  Addr, Len, I: Integer;
+  Token: String;
+  Num: TCell;
+begin
+  Addr := ZeroExtendAddr(PopDS);
+  Len := Integer(CFetch(Addr));
+  Token := '';
+  for I := 0 to Len - 1 do
+    Token := Token + Chr(CFetch(Addr + 1 + I));
+  if ParseNumber(Token, Num) then
+  begin
+    PushDS(Num);
+    PushDS(-1);
+  end
+  else
+  begin
+    PushDS(0);
+    PushDS(0);
+  end;
+end;
+
+function TForth.EnsureLitXT: Integer;
+begin
+  if not FindXT('LIT', Result) then
+    Result := DefinePrimitive('LIT', @WordLIT);
+end;
+
+function TForth.EnsureExitXT: Integer;
+begin
+  if not FindXT('EXIT', Result) then
+    Result := DefinePrimitive('EXIT', @WordExit);
+end;
+
+procedure TForth.WordLIT;
+begin
+  if IP < Length(CurrentBody) then
+  begin
+    PushDS(CurrentBody[IP]);
+    Inc(IP);
+  end;
+end;
+
+procedure TForth.InterpretLoop;
+var
+  Token: String;
+  Upper: String;
+  W: TForthWord;
+  XT: Integer;
+  Num: TCell;
+  ErrToken: String;
+begin
+  while True do
+  begin
+    CheckInterrupt;
+    if not ParseWord(Token) then
+      Break;
+    Upper := UpperCase(Token);
+    if Lookup(Upper, W) then
+    begin
+      FindXT(Upper, XT);
+      if State and (not W.Immediate) then
+      begin
+        SetLength(CompileList, Length(CompileList) + 1);
+        CompileList[High(CompileList)] := TCell(XT);
+      end
+      else
+        ExecuteWord(XT);
+    end
+    else if ParseNumber(Token, Num) then
+    begin
+      if State then
+      begin
+        XT := EnsureLitXT;
+        SetLength(CompileList, Length(CompileList) + 2);
+        CompileList[High(CompileList) - 1] := TCell(XT);
+        CompileList[High(CompileList)] := Num;
+      end
+      else
+        PushDS(Num);
+    end
+    else
+    begin
+      ErrToken := Token;
+      Abort;
+      raise EForthError.Create('UNKNOWN WORD: ' + ErrToken);
+    end;
+  end;
+end;
+
+procedure TForth.WordInterpret;
+begin
+  InterpretLoop;
+end;
+
+procedure TForth.WordState;
+begin
+  PushDS(FlagCell(State));
+end;
+
+procedure TForth.WordLeftBracket;
+begin
+  State := False;
+end;
+
+procedure TForth.WordRightBracket;
+begin
+  State := True;
+end;
+
+procedure TForth.WordLiteral;
+var
+  Val: TCell;
+  XT: Integer;
+begin
+  Val := PopDS;
+  XT := EnsureLitXT;
+  SetLength(CompileList, Length(CompileList) + 2);
+  CompileList[High(CompileList) - 1] := TCell(XT);
+  CompileList[High(CompileList)] := Val;
+end;
+
+procedure TForth.WordCompile;
+var
+  Token: String;
+  XT: Integer;
+begin
+  if not ParseWord(Token) then
+    raise EForthError.Create('WORD NAME EXPECTED');
+  if not FindXT(Token, XT) then
+    raise EForthError.Create('WORD NOT FOUND: ' + Token);
+  SetLength(CompileList, Length(CompileList) + 1);
+  CompileList[High(CompileList)] := TCell(XT);
+end;
+
+procedure TForth.WordBracketCompile;
+begin
+  WordCompile;
+end;
+
+procedure TForth.WordColon;
+var
+  Token: String;
+  Empty: TCellStack;
+begin
+  if State then
+    raise EForthError.Create('ALREADY COMPILING');
+  if not ParseWord(Token) then
+    raise EForthError.Create('WORD NAME EXPECTED');
+  SetLength(CompileList, 0);
+  SetLength(Empty, 0);
+  DefineWord(Token, wkColon, nil, Empty, False);
+  CompilingXT := Latest;
+  State := True;
+end;
+
+procedure TForth.WordSemicolon;
+var
+  ExitXT: Integer;
+begin
+  if not State then
+    raise EForthError.Create('NOT IN COMPILATION STATE');
+  ExitXT := EnsureExitXT;
+  SetLength(CompileList, Length(CompileList) + 1);
+  CompileList[High(CompileList)] := TCell(ExitXT);
+  State := False;
+  if (CompilingXT >= 0) and (CompilingXT < Length(Words)) then
+    Words[CompilingXT].Body := Copy(CompileList);
+  SetLength(CompileList, 0);
+  CompilingXT := -1;
+end;
+
+procedure TForth.WordImmediate;
+begin
+  if Latest >= 0 then
+    Words[Latest].Immediate := True;
+end;
+
+procedure TForth.WordRecurse;
+begin
+  if not State then
+    raise EForthError.Create('RECURSE ONLY IN COMPILATION');
+  if CompilingXT < 0 then
+    raise EForthError.Create('NO COMPILATION IN PROGRESS');
+  SetLength(CompileList, Length(CompileList) + 1);
+  CompileList[High(CompileList)] := TCell(CompilingXT);
+end;
+
 procedure TForth.InitPrimitives;
 begin
-  { Kernel registration grows in later specs. }
+  { Kernel registration grows as specs require. }
 end;
 
 procedure TForth.RequireModule(const ModuleName: String);
@@ -1406,7 +1721,7 @@ end;
 procedure TForth.InterpretLine(const ALine: String);
 begin
   SetLine(ALine);
-  { Outer interpreter is filled in later specs. }
+  WordInterpret;
 end;
 
 procedure TForth.ReplStep;
