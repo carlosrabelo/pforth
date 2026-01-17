@@ -1175,6 +1175,7 @@ begin
   TestExecuteInnerInterpreter;
   TestDefiningWords;
   TestWordNumberBase;
+  TestInterpretAndLit;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
