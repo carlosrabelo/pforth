@@ -1177,6 +1177,7 @@ begin
   TestWordNumberBase;
   TestInterpretAndLit;
   TestCompilerStateWords;
+  TestColonDefinitions;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
