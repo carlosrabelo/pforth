@@ -681,11 +681,10 @@ begin
     F.PushDS(1);
     F.ExecuteWord(XT);
     AssertTrue('BEGIN UNTIL top 3', F.PopDS = 3);
-    AssertTrue('BEGIN UNTIL mid', F.PopDS = 3);
-    AssertTrue('BEGIN UNTIL start', F.PopDS = 2);
+    AssertTrue('BEGIN UNTIL mid 2', F.PopDS = 2);
+    AssertTrue('BEGIN UNTIL bot 1', F.PopDS = 1);
 
-    F.InterpretLine(': WREP BEGIN DUP 1+ DUP 4 = IF DROP EXIT THEN AGAIN ;');
-    { simpler WHILE: }
+    F.DefinePrimitive('<', @F.WordLess);
     F.InterpretLine(': SUM3 0 BEGIN DUP 3 < WHILE 1+ REPEAT ;');
     F.FindXT('SUM3', XT);
     F.ExecuteWord(XT);
@@ -1329,6 +1328,7 @@ begin
   TestColonDefinitions;
   TestBranchRuntime;
   TestIfElseThen;
+  TestBeginLoops;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
