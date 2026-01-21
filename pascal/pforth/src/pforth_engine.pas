@@ -196,6 +196,31 @@ type
     procedure WordRecurse;
     function EnsureLitXT: Integer;
     function EnsureExitXT: Integer;
+    function EnsureNamedPrimitive(const AName: String; ACode: TForthWordCode): Integer;
+    procedure CompileAppend(V: TCell);
+
+    // Control flow (007)
+    procedure WordBranch;
+    procedure WordZeroBranch;
+    procedure WordIF;
+    procedure WordELSE;
+    procedure WordTHEN;
+    procedure WordBEGIN;
+    procedure WordUNTIL;
+    procedure WordAGAIN;
+    procedure WordWHILE;
+    procedure WordREPEAT;
+    procedure WordDoRun;
+    procedure WordLoopRun;
+    procedure WordPlusLoopRun;
+    procedure WordLeaveRun;
+    procedure WordDo;
+    procedure WordLoop;
+    procedure WordPlusLoop;
+    procedure WordI;
+    procedure WordJ;
+    procedure WordLeave;
+    procedure WordUnloop;
 
     // REPL / cold start (001.4)
     procedure InitPrimitives;
@@ -1668,8 +1693,278 @@ begin
     raise EForthError.Create('RECURSE ONLY IN COMPILATION');
   if CompilingXT < 0 then
     raise EForthError.Create('NO COMPILATION IN PROGRESS');
+  CompileAppend(TCell(CompilingXT));
+end;
+
+function TForth.EnsureNamedPrimitive(const AName: String; ACode: TForthWordCode): Integer;
+begin
+  if not FindXT(AName, Result) then
+    Result := DefinePrimitive(AName, ACode);
+end;
+
+procedure TForth.CompileAppend(V: TCell);
+begin
   SetLength(CompileList, Length(CompileList) + 1);
-  CompileList[High(CompileList)] := TCell(CompilingXT);
+  CompileList[High(CompileList)] := V;
+end;
+
+procedure TForth.WordBranch;
+var
+  Offset: Integer;
+begin
+  if IP < Length(CurrentBody) then
+  begin
+    Offset := Integer(CurrentBody[IP]);
+    Inc(IP, Offset);
+  end;
+end;
+
+procedure TForth.WordZeroBranch;
+var
+  Flag: TCell;
+  Offset: Integer;
+begin
+  Flag := PopDS;
+  if IP < Length(CurrentBody) then
+  begin
+    Offset := Integer(CurrentBody[IP]);
+    if Flag = 0 then
+      Inc(IP, Offset)
+    else
+      Inc(IP);
+  end;
+end;
+
+procedure TForth.WordIF;
+var
+  XT: Integer;
+begin
+  if not State then
+    raise EForthError.Create('IF ONLY IN COMPILATION');
+  XT := EnsureNamedPrimitive('0BRANCH', @WordZeroBranch);
+  CompileAppend(TCell(XT));
+  CompileAppend(0);
+  PushDS(TCell(High(CompileList)));
+end;
+
+procedure TForth.WordTHEN;
+var
+  Pos: Integer;
+begin
+  if not State then
+    raise EForthError.Create('THEN ONLY IN COMPILATION');
+  Pos := Integer(PopDS);
+  if (Pos < 0) or (Pos >= Length(CompileList)) then
+    raise EForthError.Create('INVALID BRANCH TARGET');
+  CompileList[Pos] := TCell(Length(CompileList) - Pos);
+end;
+
+procedure TForth.WordELSE;
+var
+  BranchXT, Pos1, Pos2: Integer;
+begin
+  if not State then
+    raise EForthError.Create('ELSE ONLY IN COMPILATION');
+  BranchXT := EnsureNamedPrimitive('BRANCH', @WordBranch);
+  CompileAppend(TCell(BranchXT));
+  CompileAppend(0);
+  Pos2 := High(CompileList);
+  Pos1 := Integer(PopDS);
+  if (Pos1 < 0) or (Pos1 >= Length(CompileList)) then
+    raise EForthError.Create('INVALID BRANCH TARGET');
+  CompileList[Pos1] := TCell(Pos2 + 1 - Pos1);
+  PushDS(TCell(Pos2));
+end;
+
+procedure TForth.WordBEGIN;
+begin
+  if not State then
+    raise EForthError.Create('BEGIN ONLY IN COMPILATION');
+  PushDS(TCell(Length(CompileList)));
+end;
+
+procedure TForth.WordUNTIL;
+var
+  Dest, XT: Integer;
+begin
+  if not State then
+    raise EForthError.Create('UNTIL ONLY IN COMPILATION');
+  Dest := Integer(PopDS);
+  XT := EnsureNamedPrimitive('0BRANCH', @WordZeroBranch);
+  CompileAppend(TCell(XT));
+  CompileAppend(TCell(Dest - Length(CompileList)));
+end;
+
+procedure TForth.WordAGAIN;
+var
+  Dest, BranchXT: Integer;
+begin
+  if not State then
+    raise EForthError.Create('AGAIN ONLY IN COMPILATION');
+  Dest := Integer(PopDS);
+  BranchXT := EnsureNamedPrimitive('BRANCH', @WordBranch);
+  CompileAppend(TCell(BranchXT));
+  CompileAppend(TCell(Dest - Length(CompileList)));
+end;
+
+procedure TForth.WordWHILE;
+var
+  Dest: TCell;
+  XT, Orig: Integer;
+begin
+  if not State then
+    raise EForthError.Create('WHILE ONLY IN COMPILATION');
+  Dest := PopDS;
+  XT := EnsureNamedPrimitive('0BRANCH', @WordZeroBranch);
+  CompileAppend(TCell(XT));
+  CompileAppend(0);
+  Orig := High(CompileList);
+  PushDS(Dest);
+  PushDS(TCell(Orig));
+end;
+
+procedure TForth.WordREPEAT;
+var
+  Orig, Dest, BranchXT: Integer;
+begin
+  if not State then
+    raise EForthError.Create('REPEAT ONLY IN COMPILATION');
+  Orig := Integer(PopDS);
+  Dest := Integer(PopDS);
+  BranchXT := EnsureNamedPrimitive('BRANCH', @WordBranch);
+  CompileAppend(TCell(BranchXT));
+  CompileAppend(TCell(Dest - Length(CompileList)));
+  if (Orig < 0) or (Orig >= Length(CompileList)) then
+    raise EForthError.Create('INVALID BRANCH TARGET');
+  CompileList[Orig] := TCell(Length(CompileList) - Orig);
+end;
+
+procedure TForth.WordDoRun;
+var
+  Start, Limit: TCell;
+begin
+  Start := PopDS;
+  Limit := PopDS;
+  PushRS(Limit);
+  PushRS(Start);
+end;
+
+procedure TForth.WordLoopRun;
+var
+  Index, Limit: TCell;
+  Offset: Integer;
+begin
+  Index := PopRS;
+  Limit := PopRS;
+  Index := WrapCell(Integer(Index) + 1);
+  if Index < Limit then
+  begin
+    PushRS(Limit);
+    PushRS(Index);
+    if IP < Length(CurrentBody) then
+    begin
+      Offset := Integer(CurrentBody[IP]);
+      Inc(IP, Offset);
+    end;
+  end
+  else
+    Inc(IP);
+end;
+
+procedure TForth.WordPlusLoopRun;
+var
+  Step, Index, Limit: TCell;
+  Offset: Integer;
+  Done: Boolean;
+begin
+  Step := PopDS;
+  Index := PopRS;
+  Limit := PopRS;
+  Index := WrapCell(Integer(Index) + Integer(Step));
+  Done := ((Step > 0) and (Index >= Limit)) or ((Step < 0) and (Index <= Limit));
+  if Done then
+    Inc(IP)
+  else
+  begin
+    PushRS(Limit);
+    PushRS(Index);
+    if IP < Length(CurrentBody) then
+    begin
+      Offset := Integer(CurrentBody[IP]);
+      Inc(IP, Offset);
+    end;
+  end;
+end;
+
+procedure TForth.WordLeaveRun;
+begin
+  if Length(RS) >= 2 then
+    RS[High(RS)] := RS[High(RS) - 1];
+end;
+
+procedure TForth.WordDo;
+var
+  XT: Integer;
+begin
+  if not State then
+    raise EForthError.Create('DO ONLY IN COMPILATION');
+  XT := EnsureNamedPrimitive('(DO)', @WordDoRun);
+  CompileAppend(TCell(XT));
+  PushDS(TCell(Length(CompileList)));
+end;
+
+procedure TForth.WordLoop;
+var
+  Dest, XT: Integer;
+begin
+  if not State then
+    raise EForthError.Create('LOOP ONLY IN COMPILATION');
+  Dest := Integer(PopDS);
+  XT := EnsureNamedPrimitive('(LOOP)', @WordLoopRun);
+  CompileAppend(TCell(XT));
+  CompileAppend(TCell(Dest - Length(CompileList)));
+end;
+
+procedure TForth.WordPlusLoop;
+var
+  Dest, XT: Integer;
+begin
+  if not State then
+    raise EForthError.Create('+LOOP ONLY IN COMPILATION');
+  Dest := Integer(PopDS);
+  XT := EnsureNamedPrimitive('(+LOOP)', @WordPlusLoopRun);
+  CompileAppend(TCell(XT));
+  CompileAppend(TCell(Dest - Length(CompileList)));
+end;
+
+procedure TForth.WordI;
+begin
+  PushDS(PeekRS);
+end;
+
+procedure TForth.WordJ;
+begin
+  if Length(RS) < 4 then
+    raise EForthError.Create('J: NOT ENOUGH LOOP LEVELS');
+  PushDS(RS[High(RS) - 2]);
+end;
+
+procedure TForth.WordLeave;
+var
+  XT: Integer;
+begin
+  if not State then
+    raise EForthError.Create('LEAVE ONLY IN COMPILATION');
+  XT := EnsureNamedPrimitive('(LEAVE)', @WordLeaveRun);
+  CompileAppend(TCell(XT));
+end;
+
+procedure TForth.WordUnloop;
+begin
+  if Length(RS) < 2 then
+    raise EForthError.Create('RETURN STACK UNDERFLOW');
+  PopRS;
+  PopRS;
 end;
 
 procedure TForth.InitPrimitives;

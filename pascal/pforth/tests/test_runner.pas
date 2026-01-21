@@ -574,6 +574,155 @@ begin
   end;
 end;
 
+procedure RegisterControlWords(F: TForth);
+begin
+  F.DefinePrimitive('BRANCH', @F.WordBranch);
+  F.DefinePrimitive('0BRANCH', @F.WordZeroBranch);
+  F.DefinePrimitive('DUP', @F.WordDup);
+  F.DefinePrimitive('DROP', @F.WordDrop);
+  F.DefinePrimitive('+', @F.WordPlus);
+  F.DefinePrimitive('1+', @F.WordOnePlus);
+  F.DefinePrimitive('=', @F.WordEquals);
+  F.DefinePrimitive('EXIT', @F.WordExit);
+  F.DefinePrimitive('LIT', @F.WordLIT);
+  F.DefinePrimitive(':', @F.WordColon);
+  F.DefineImmediate(';', @F.WordSemicolon);
+  F.DefineImmediate('IF', @F.WordIF);
+  F.DefineImmediate('ELSE', @F.WordELSE);
+  F.DefineImmediate('THEN', @F.WordTHEN);
+  F.DefineImmediate('BEGIN', @F.WordBEGIN);
+  F.DefineImmediate('UNTIL', @F.WordUNTIL);
+  F.DefineImmediate('AGAIN', @F.WordAGAIN);
+  F.DefineImmediate('WHILE', @F.WordWHILE);
+  F.DefineImmediate('REPEAT', @F.WordREPEAT);
+  F.DefineImmediate('DO', @F.WordDo);
+  F.DefineImmediate('LOOP', @F.WordLoop);
+  F.DefineImmediate('+LOOP', @F.WordPlusLoop);
+  F.DefinePrimitive('I', @F.WordI);
+  F.DefinePrimitive('J', @F.WordJ);
+  F.DefineImmediate('LEAVE', @F.WordLeave);
+  F.DefinePrimitive('UNLOOP', @F.WordUnloop);
+end;
+
+procedure TestBranchRuntime;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  Body: TCellStack;
+  XT, LitXT, ZBranchXT, ExitXT: Integer;
+begin
+  WriteLn('--- TestBranchRuntime ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    LitXT := F.DefinePrimitive('LIT', @F.WordLIT);
+    ZBranchXT := F.DefinePrimitive('0BRANCH', @F.WordZeroBranch);
+    ExitXT := F.DefinePrimitive('EXIT', @F.WordExit);
+    { LIT 0  0BRANCH 4  LIT 99 EXIT  LIT 42 EXIT
+      offset at index 3; IP+=4 -> index 7 = LIT 42 }
+    SetLength(Body, 10);
+    Body[0] := TCell(LitXT);
+    Body[1] := 0;
+    Body[2] := TCell(ZBranchXT);
+    Body[3] := 4;
+    Body[4] := TCell(LitXT);
+    Body[5] := 99;
+    Body[6] := TCell(ExitXT);
+    Body[7] := TCell(LitXT);
+    Body[8] := 42;
+    Body[9] := TCell(ExitXT);
+    XT := F.DefineWord('ZB', wkColon, nil, Body, False);
+    F.ExecuteWord(XT);
+    AssertTrue('0BRANCH taken leaves 42', F.PopDS = 42);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
+procedure TestIfElseThen;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  XT: Integer;
+begin
+  WriteLn('--- TestIfElseThen ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    RegisterControlWords(F);
+    F.InterpretLine(': TIF IF 1 ELSE 2 THEN ;');
+    F.FindXT('TIF', XT);
+    F.PushDS(-1);
+    F.ExecuteWord(XT);
+    AssertTrue('IF true', F.PopDS = 1);
+    F.PushDS(0);
+    F.ExecuteWord(XT);
+    AssertTrue('IF false', F.PopDS = 2);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
+procedure TestBeginLoops;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  XT: Integer;
+begin
+  WriteLn('--- TestBeginLoops ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    RegisterControlWords(F);
+    F.InterpretLine(': COUNTDOWN BEGIN DUP 1+ DUP 3 = UNTIL ;');
+    F.FindXT('COUNTDOWN', XT);
+    F.PushDS(1);
+    F.ExecuteWord(XT);
+    AssertTrue('BEGIN UNTIL top 3', F.PopDS = 3);
+    AssertTrue('BEGIN UNTIL mid', F.PopDS = 3);
+    AssertTrue('BEGIN UNTIL start', F.PopDS = 2);
+
+    F.InterpretLine(': WREP BEGIN DUP 1+ DUP 4 = IF DROP EXIT THEN AGAIN ;');
+    { simpler WHILE: }
+    F.InterpretLine(': SUM3 0 BEGIN DUP 3 < WHILE 1+ REPEAT ;');
+    F.FindXT('SUM3', XT);
+    F.ExecuteWord(XT);
+    AssertTrue('WHILE REPEAT', F.PopDS = 3);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
+procedure TestDoLoop;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  XT: Integer;
+begin
+  WriteLn('--- TestDoLoop ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    RegisterControlWords(F);
+    F.InterpretLine(': SUM10 0 10 0 DO I + LOOP ;');
+    F.FindXT('SUM10', XT);
+    F.ExecuteWord(XT);
+    AssertTrue('DO LOOP sum 0..9', F.PopDS = 45);
+
+    F.InterpretLine(': NEST 2 0 DO 2 0 DO J I + LOOP LOOP ;');
+    F.FindXT('NEST', XT);
+    F.ExecuteWord(XT);
+    { leaves four sums: for J=0,1 and I=0,1 -> 0,1,1,2 }
+    AssertTrue('J nest depth', F.DepthDS = 4);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
 procedure TestColonDefinitions;
 var
   F: TForth;
@@ -1178,6 +1327,7 @@ begin
   TestInterpretAndLit;
   TestCompilerStateWords;
   TestColonDefinitions;
+  TestBranchRuntime;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
