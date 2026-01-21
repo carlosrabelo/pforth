@@ -711,11 +711,11 @@ begin
     F.ExecuteWord(XT);
     AssertTrue('DO LOOP sum 0..9', F.PopDS = 45);
 
-    F.InterpretLine(': NEST 2 0 DO 2 0 DO J I + LOOP LOOP ;');
-    F.FindXT('NEST', XT);
+    F.InterpretLine(': OUTER 0 2 0 DO 2 0 DO J + LOOP LOOP ;');
+    F.FindXT('OUTER', XT);
     F.ExecuteWord(XT);
-    { leaves four sums: for J=0,1 and I=0,1 -> 0,1,1,2 }
-    AssertTrue('J nest depth', F.DepthDS = 4);
+    { J=0 twice + J=1 twice = 0+0+1+1 = 2 }
+    AssertTrue('J nested sum', F.PopDS = 2);
   finally
     F.Free;
     OutStream.Free;
@@ -1329,6 +1329,7 @@ begin
   TestBranchRuntime;
   TestIfElseThen;
   TestBeginLoops;
+  TestDoLoop;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
