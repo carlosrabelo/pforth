@@ -695,6 +695,53 @@ begin
   end;
 end;
 
+procedure TestStringsAndComments;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  OutText: String;
+  Addr, Len: TCell;
+begin
+  WriteLn('--- TestStringsAndComments ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.DefineImmediate('."', @F.WordDotQuote);
+    F.DefineImmediate('S"', @F.WordSQuote);
+    F.DefineImmediate('(', @F.WordParen);
+    F.DefineImmediate('\', @F.WordBackslash);
+    F.DefinePrimitive('TYPE', @F.WordType);
+    F.DefinePrimitive('DROP', @F.WordDrop);
+
+    F.InterpretLine('." HI"');
+    SetLength(OutText, OutStream.Size);
+    if OutStream.Size > 0 then
+    begin
+      OutStream.Position := 0;
+      OutStream.Read(OutText[1], OutStream.Size);
+    end;
+    AssertTrue('." prints HI', OutText = 'HI');
+
+    F.InterpretLine('S" AB"');
+    Len := F.PopDS;
+    Addr := F.PopDS;
+    AssertTrue('S" length 2', Len = 2);
+    AssertTrue('S" bytes', (F.CFetch(Integer(Addr)) = Ord('A')) and
+      (F.CFetch(Integer(Addr) + 1) = Ord('B')));
+
+    F.PushDS(99);
+    F.InterpretLine('( ignored )');
+    AssertTrue('( leaves stack', F.PopDS = 99);
+
+    F.PushDS(7);
+    F.InterpretLine('\ DROP 1');
+    AssertTrue('\ comments rest', F.PopDS = 7);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
 procedure TestNumericOutput;
 var
   F: TForth;
@@ -1390,6 +1437,7 @@ begin
   TestBeginLoops;
   TestDoLoop;
   TestNumericOutput;
+  TestStringsAndComments;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
