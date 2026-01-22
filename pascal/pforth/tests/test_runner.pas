@@ -695,6 +695,65 @@ begin
   end;
 end;
 
+procedure TestNumericOutput;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  OutText: String;
+begin
+  WriteLn('--- TestNumericOutput ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.PushDS(42);
+    F.WordDot;
+    SetLength(OutText, OutStream.Size);
+    if OutStream.Size > 0 then
+    begin
+      OutStream.Position := 0;
+      OutStream.Read(OutText[1], OutStream.Size);
+    end;
+    AssertTrue('. prints 42 ', OutText = '42 ');
+
+    OutStream.Clear;
+    F.PushDS(-1);
+    F.WordUDot;
+    SetLength(OutText, OutStream.Size);
+    if OutStream.Size > 0 then
+    begin
+      OutStream.Position := 0;
+      OutStream.Read(OutText[1], OutStream.Size);
+    end;
+    AssertTrue('U. prints 65535 ', OutText = '65535 ');
+
+    OutStream.Clear;
+    F.PushDS(3);
+    F.PushDS(5);
+    F.WordDotS;
+    SetLength(OutText, OutStream.Size);
+    if OutStream.Size > 0 then
+    begin
+      OutStream.Position := 0;
+      OutStream.Read(OutText[1], OutStream.Size);
+    end;
+    AssertTrue('.S picture', OutText = '<2> 3 5 ');
+    AssertTrue('.S leaves stack', (F.DepthDS = 2) and (F.PopDS = 5) and (F.PopDS = 3));
+
+    OutStream.Clear;
+    F.WordPage;
+    SetLength(OutText, OutStream.Size);
+    if OutStream.Size > 0 then
+    begin
+      OutStream.Position := 0;
+      OutStream.Read(OutText[1], OutStream.Size);
+    end;
+    AssertTrue('PAGE clears screen', OutText = #27'[2J' + #27'[H');
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
 procedure TestDoLoop;
 var
   F: TForth;
@@ -1330,6 +1389,7 @@ begin
   TestIfElseThen;
   TestBeginLoops;
   TestDoLoop;
+  TestNumericOutput;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));

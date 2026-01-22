@@ -222,6 +222,13 @@ type
     procedure WordLeave;
     procedure WordUnloop;
 
+    // Numeric output (008.1)
+    function FormatCell(Val: TCell; ABase: Integer; IsSigned: Boolean): String;
+    procedure WordDot;
+    procedure WordUDot;
+    procedure WordDotS;
+    procedure WordPage;
+
     // REPL / cold start (001.4)
     procedure InitPrimitives;
     procedure RequireModule(const ModuleName: String);
@@ -1965,6 +1972,83 @@ begin
     raise EForthError.Create('RETURN STACK UNDERFLOW');
   PopRS;
   PopRS;
+end;
+
+function TForth.FormatCell(Val: TCell; ABase: Integer; IsSigned: Boolean): String;
+const
+  Digits = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+var
+  Base: Integer;
+  Neg: Boolean;
+  UVal: LongWord;
+  Buf: String;
+  Dig: Integer;
+  I, J: Integer;
+  Tmp: Char;
+begin
+  Base := ABase;
+  if (Base < 2) or (Base > 36) then
+    Base := 10;
+  if Val = 0 then
+  begin
+    Result := '0';
+    Exit;
+  end;
+  Neg := False;
+  if IsSigned and (Val < 0) then
+  begin
+    Neg := True;
+    UVal := LongWord(-Integer(Val));
+  end
+  else
+    UVal := LongWord(Word(Val));
+  Buf := '';
+  while UVal > 0 do
+  begin
+    Dig := Integer(UVal mod LongWord(Base));
+    Buf := Buf + Digits[Dig + 1];
+    UVal := UVal div LongWord(Base);
+  end;
+  if Neg then
+    Buf := Buf + '-';
+  I := 1;
+  J := Length(Buf);
+  while I < J do
+  begin
+    Tmp := Buf[I];
+    Buf[I] := Buf[J];
+    Buf[J] := Tmp;
+    Inc(I);
+    Dec(J);
+  end;
+  Result := Buf;
+end;
+
+procedure TForth.WordDot;
+begin
+  EmitString(FormatCell(PopDS, GetBase, True) + ' ');
+end;
+
+procedure TForth.WordUDot;
+begin
+  EmitString(FormatCell(PopDS, GetBase, False) + ' ');
+end;
+
+procedure TForth.WordDotS;
+var
+  I: Integer;
+  B: Integer;
+begin
+  B := GetBase;
+  EmitString('<' + IntToStr(Length(DS)) + '>');
+  for I := 0 to High(DS) do
+    EmitString(' ' + FormatCell(DS[I], B, True));
+  EmitString(' ');
+end;
+
+procedure TForth.WordPage;
+begin
+  EmitString(#27'[2J' + #27'[H');
 end;
 
 procedure TForth.InitPrimitives;
