@@ -229,6 +229,13 @@ type
     procedure WordDotS;
     procedure WordPage;
 
+    // Strings and comments (008.2)
+    function ParseStringLiteral: String;
+    procedure WordDotQuote;
+    procedure WordSQuote;
+    procedure WordParen;
+    procedure WordBackslash;
+
     // REPL / cold start (001.4)
     procedure InitPrimitives;
     procedure RequireModule(const ModuleName: String);
@@ -2049,6 +2056,82 @@ end;
 procedure TForth.WordPage;
 begin
   EmitString(#27'[2J' + #27'[H');
+end;
+
+function TForth.ParseStringLiteral: String;
+begin
+  if (IN_PTR <= Length(TIB)) and (TIB[IN_PTR] = ' ') then
+    Inc(IN_PTR);
+  Result := '';
+  while (IN_PTR <= Length(TIB)) and (TIB[IN_PTR] <> '"') do
+  begin
+    Result := Result + TIB[IN_PTR];
+    Inc(IN_PTR);
+  end;
+  if (IN_PTR <= Length(TIB)) and (TIB[IN_PTR] = '"') then
+    Inc(IN_PTR);
+end;
+
+procedure TForth.WordDotQuote;
+var
+  S: String;
+  Addr, I, LitXT, TypeXT: Integer;
+begin
+  S := ParseStringLiteral;
+  if State then
+  begin
+    Addr := Here;
+    for I := 1 to Length(S) do
+      CStore(Addr + I - 1, Byte(Ord(S[I])));
+    Allot(Length(S));
+    LitXT := EnsureLitXT;
+    TypeXT := EnsureNamedPrimitive('TYPE', @WordType);
+    CompileAppend(TCell(LitXT));
+    CompileAppend(TCell(Addr));
+    CompileAppend(TCell(LitXT));
+    CompileAppend(TCell(Length(S)));
+    CompileAppend(TCell(TypeXT));
+  end
+  else
+    EmitString(S);
+end;
+
+procedure TForth.WordSQuote;
+var
+  S: String;
+  Addr, I, LitXT: Integer;
+begin
+  S := ParseStringLiteral;
+  Addr := Here;
+  for I := 1 to Length(S) do
+    CStore(Addr + I - 1, Byte(Ord(S[I])));
+  Allot(Length(S));
+  if State then
+  begin
+    LitXT := EnsureLitXT;
+    CompileAppend(TCell(LitXT));
+    CompileAppend(TCell(Addr));
+    CompileAppend(TCell(LitXT));
+    CompileAppend(TCell(Length(S)));
+  end
+  else
+  begin
+    PushDS(TCell(Addr));
+    PushDS(TCell(Length(S)));
+  end;
+end;
+
+procedure TForth.WordParen;
+begin
+  while (IN_PTR <= Length(TIB)) and (TIB[IN_PTR] <> ')') do
+    Inc(IN_PTR);
+  if (IN_PTR <= Length(TIB)) and (TIB[IN_PTR] = ')') then
+    Inc(IN_PTR);
+end;
+
+procedure TForth.WordBackslash;
+begin
+  IN_PTR := Length(TIB) + 1;
 end;
 
 procedure TForth.InitPrimitives;
