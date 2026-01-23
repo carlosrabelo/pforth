@@ -236,6 +236,13 @@ type
     procedure WordParen;
     procedure WordBackslash;
 
+    // Memory and file evaluation (008.3)
+    procedure LoadSystem(const Data: String);
+    procedure LoadFile(const Path: String);
+    procedure WordEvaluate;
+    procedure WordIncluded;
+    procedure WordInclude;
+
     // REPL / cold start (001.4)
     procedure InitPrimitives;
     procedure RequireModule(const ModuleName: String);
@@ -2132,6 +2139,99 @@ end;
 procedure TForth.WordBackslash;
 begin
   IN_PTR := Length(TIB) + 1;
+end;
+
+procedure TForth.LoadSystem(const Data: String);
+var
+  SavedTIB: String;
+  SavedIN: Integer;
+  Lines: TStringList;
+  I: Integer;
+  Trimmed: String;
+begin
+  SavedTIB := TIB;
+  SavedIN := IN_PTR;
+  Lines := TStringList.Create;
+  try
+    Lines.Text := Data;
+    for I := 0 to Lines.Count - 1 do
+    begin
+      CheckInterrupt;
+      Trimmed := Trim(Lines[I]);
+      if Trimmed = '' then
+        Continue;
+      if (Length(Trimmed) > 0) and (Trimmed[1] = '\') then
+        Continue;
+      InterpretLine(Lines[I]);
+    end;
+  finally
+    Lines.Free;
+    TIB := SavedTIB;
+    IN_PTR := SavedIN;
+  end;
+end;
+
+procedure TForth.LoadFile(const Path: String);
+var
+  Lines: TStringList;
+begin
+  Lines := TStringList.Create;
+  try
+    try
+      Lines.LoadFromFile(Path);
+    except
+      on E: Exception do
+        raise EForthError.Create('CANNOT OPEN: ' + Path);
+    end;
+    LoadSystem(Lines.Text);
+  finally
+    Lines.Free;
+  end;
+end;
+
+procedure TForth.WordEvaluate;
+var
+  Len, Addr, I: Integer;
+  SavedTIB: String;
+  SavedIN: Integer;
+  Buf: String;
+begin
+  Len := Integer(PopDS);
+  Addr := ZeroExtendAddr(PopDS);
+  SavedTIB := TIB;
+  SavedIN := IN_PTR;
+  Buf := '';
+  for I := 0 to Len - 1 do
+    Buf := Buf + Chr(CFetch(Addr + I));
+  try
+    SetLine(Buf);
+    InterpretLoop;
+  finally
+    TIB := SavedTIB;
+    IN_PTR := SavedIN;
+  end;
+end;
+
+procedure TForth.WordIncluded;
+var
+  Len, Addr, I: Integer;
+  Path: String;
+begin
+  Len := Integer(PopDS);
+  Addr := ZeroExtendAddr(PopDS);
+  Path := '';
+  for I := 0 to Len - 1 do
+    Path := Path + Chr(CFetch(Addr + I));
+  LoadFile(Path);
+end;
+
+procedure TForth.WordInclude;
+var
+  Token: String;
+begin
+  if not ParseWord(Token) then
+    raise EForthError.Create('FILE NAME EXPECTED');
+  LoadFile(Token);
 end;
 
 procedure TForth.InitPrimitives;

@@ -695,6 +695,91 @@ begin
   end;
 end;
 
+procedure TestEvaluateAndInclude;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  Raised: Boolean;
+  Path: String;
+  SL: TStringList;
+  Addr: Integer;
+  I: Integer;
+begin
+  WriteLn('--- TestEvaluateAndInclude ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.DefinePrimitive('DUP', @F.WordDup);
+    F.DefinePrimitive('EVALUATE', @F.WordEvaluate);
+    F.DefinePrimitive('INCLUDE', @F.WordInclude);
+    F.DefinePrimitive('INCLUDED', @F.WordIncluded);
+
+    Addr := 4000;
+    F.CStore(Addr, Ord('5'));
+    F.CStore(Addr + 1, Ord(' '));
+    F.CStore(Addr + 2, Ord('D'));
+    F.CStore(Addr + 3, Ord('U'));
+    F.CStore(Addr + 4, Ord('P'));
+    F.PushDS(TCell(Addr));
+    F.PushDS(5);
+    F.WordEvaluate;
+    AssertTrue('EVALUATE depth', F.DepthDS = 2);
+    AssertTrue('EVALUATE value', F.PopDS = 5);
+    F.PopDS;
+
+    Raised := False;
+    try
+      F.SetLine('');
+      F.WordInclude;
+    except
+      on E: EForthError do
+      begin
+        Raised := True;
+        AssertTrue('INCLUDE empty msg', E.Message = 'FILE NAME EXPECTED');
+      end;
+    end;
+    AssertTrue('INCLUDE empty raises', Raised);
+
+    Raised := False;
+    try
+      F.LoadFile('/no/such/pforth-file.fs');
+    except
+      on E: EForthError do
+      begin
+        Raised := True;
+        AssertTrue('CANNOT OPEN msg', Pos('CANNOT OPEN:', E.Message) = 1);
+      end;
+    end;
+    AssertTrue('CANNOT OPEN raises', Raised);
+
+    Path := GetTempDir + 'pforth_incl_test.fs';
+    SL := TStringList.Create;
+    try
+      SL.Text := '7 DUP' + LineEnding;
+      SL.SaveToFile(Path);
+      F.InterpretLine('INCLUDE ' + Path);
+      AssertTrue('INCLUDE file top', F.PopDS = 7);
+      AssertTrue('INCLUDE file second', F.PopDS = 7);
+
+      Addr := 5000;
+      for I := 1 to Length(Path) do
+        F.CStore(Addr + I - 1, Byte(Ord(Path[I])));
+      F.PushDS(TCell(Addr));
+      F.PushDS(TCell(Length(Path)));
+      F.WordIncluded;
+      AssertTrue('INCLUDED top', F.PopDS = 7);
+      F.PopDS;
+    finally
+      SL.Free;
+      if FileExists(Path) then
+        DeleteFile(Path);
+    end;
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
 procedure TestStringsAndComments;
 var
   F: TForth;
@@ -1438,6 +1523,7 @@ begin
   TestDoLoop;
   TestNumericOutput;
   TestStringsAndComments;
+  TestEvaluateAndInclude;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
