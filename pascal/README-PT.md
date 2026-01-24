@@ -40,6 +40,10 @@ make quality         # Executar verificações de qualidade
 make clean           # Remover artefatos de compilação
 ```
 
+## Bibliotecas
+
+`make test` define `PFORTH_LIB` para o diretório `pforth/` do repositório.
+
 ## Licença
 
 Este projeto é licenciado sob a Licença MIT — consulte [LICENSE](../LICENSE) para mais detalhes.
