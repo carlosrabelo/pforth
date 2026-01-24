@@ -4,6 +4,9 @@ unit pforth_cli;
 
 interface
 
+uses
+  SysUtils, Classes, pforth_types, pforth_engine;
+
 type
   TStringArray = array of String;
 
@@ -37,9 +40,33 @@ begin
 end;
 
 function RunCLI(const Config: TCLIConfig): Integer;
+var
+  F: TForth;
+  I: Integer;
+  Path: String;
 begin
-  // Bootstrap placeholder
-  Result := 0;
+  F := TForth.Create(nil, nil);
+  try
+    for I := 0 to High(Config.FilePaths) do
+    begin
+      Path := Config.FilePaths[I];
+      try
+        F.LoadFile(Path);
+      except
+        on E: EForthError do
+        begin
+          WriteLn(E.Message);
+          Result := 1;
+          Exit;
+        end;
+      end;
+    end;
+    if Config.Interactive then
+      F.Quit;
+    Result := 0;
+  finally
+    F.Free;
+  end;
 end;
 
 end.
