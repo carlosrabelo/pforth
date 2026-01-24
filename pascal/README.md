@@ -27,7 +27,7 @@ make build
 # Start REPL
 ./bin/pforth
 
-# Run demo script
+# Run demo script (batch)
 ./bin/pforth ../demos/sieve.fs
 ```
 
