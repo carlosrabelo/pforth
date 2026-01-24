@@ -45,7 +45,12 @@ begin
   AssertTrue('File arg 0 is demo1.fs', Cfg2.FilePaths[0] = 'demo1.fs');
   AssertTrue('File arg 1 is demo2.fs', Cfg2.FilePaths[1] = 'demo2.fs');
 
-  AssertTrue('RunCLI returns 0', RunCLI(Cfg1) = 0);
+  AssertTrue('RunCLI interactive returns 0', RunCLI(Cfg1) = 0);
+
+  SetLength(FileArgs, 1);
+  FileArgs[0] := '/no/such/pforth_missing_xyz.fs';
+  Cfg2 := ParseArgs(FileArgs);
+  AssertTrue('RunCLI missing file returns 1', RunCLI(Cfg2) = 1);
 end;
 
 procedure TestConsoleIOPrimitives;
