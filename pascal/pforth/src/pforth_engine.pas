@@ -243,6 +243,11 @@ type
     procedure WordIncluded;
     procedure WordInclude;
 
+    // Modules and CORE (008.4)
+    function FindLibPath(const Name: String): String;
+    procedure WordRequire;
+    procedure WordAbortDict;
+
     // REPL / cold start (001.4)
     procedure InitPrimitives;
     procedure RequireModule(const ModuleName: String);
@@ -2148,10 +2153,12 @@ var
   Lines: TStringList;
   I: Integer;
   Trimmed: String;
+  Parts: TStringList;
 begin
   SavedTIB := TIB;
   SavedIN := IN_PTR;
   Lines := TStringList.Create;
+  Parts := TStringList.Create;
   try
     Lines.Text := Data;
     for I := 0 to Lines.Count - 1 do
@@ -2160,11 +2167,25 @@ begin
       Trimmed := Trim(Lines[I]);
       if Trimmed = '' then
         Continue;
-      if (Length(Trimmed) > 0) and (Trimmed[1] = '\') then
+      if Trimmed[1] = '\' then
         Continue;
+      if (Length(Trimmed) >= 8) and (UpperCase(Copy(Trimmed, 1, 8)) = '#REQUIRE') then
+      begin
+        Parts.Clear;
+        Parts.Delimiter := ' ';
+        Parts.StrictDelimiter := True;
+        Parts.DelimitedText := StringReplace(Trimmed, #9, ' ', [rfReplaceAll]);
+        { Split on whitespace more carefully }
+        Parts.Clear;
+        ExtractStrings([' ', #9], [], PChar(Trimmed), Parts);
+        if Parts.Count > 1 then
+          RequireModule(Parts[1]);
+        Continue;
+      end;
       InterpretLine(Lines[I]);
     end;
   finally
+    Parts.Free;
     Lines.Free;
     TIB := SavedTIB;
     IN_PTR := SavedIN;
@@ -2234,26 +2255,228 @@ begin
   LoadFile(Token);
 end;
 
+const
+  CoreFSSource =
+    '\ pForth core library' + #10 +
+    ': NIP    SWAP DROP ;' + #10 +
+    ': TUCK   SWAP OVER ;' + #10 +
+    ': ROT    >R SWAP R> SWAP ;' + #10 +
+    ': -ROT   SWAP >R SWAP R> ;' + #10 +
+    ': 2DUP   OVER OVER ;' + #10 +
+    ': 2DROP  DROP DROP ;' + #10 +
+    ': /      /MOD NIP ;' + #10 +
+    ': MOD    /MOD DROP ;' + #10 +
+    ': 0=     0 = ;' + #10 +
+    ': <>     = 0= ;' + #10 +
+    ': 0<>    0 <> ;' + #10 +
+    ': 0<     0 < ;' + #10 +
+    ': 0>     0 > ;' + #10 +
+    ': <=     OVER OVER < ROT ROT = OR ;' + #10 +
+    ': >=     OVER OVER > ROT ROT = OR ;' + #10 +
+    ': 1+     1 + ;' + #10 +
+    ': 1-     1 - ;' + #10 +
+    ': 2+     2 + ;' + #10 +
+    ': 2-     2 - ;' + #10 +
+    ': 2*     2 * ;' + #10 +
+    ': 2/     2 / ;' + #10 +
+    ': NEGATE 0 SWAP - ;' + #10 +
+    ': +!     TUCK @ + SWAP ! ;' + #10 +
+    ': ABS    DUP 0< IF NEGATE THEN ;' + #10 +
+    ': MIN    2DUP < IF DROP ELSE SWAP DROP THEN ;' + #10 +
+    ': MAX    2DUP > IF DROP ELSE SWAP DROP THEN ;' + #10 +
+    ': SPACE  32 EMIT ;' + #10 +
+    ': SPACES 0 MAX 0 DO SPACE LOOP ;' + #10 +
+    ': ?      @ . ;' + #10 +
+    ': PAGE   12 EMIT ;' + #10 +
+    ': ERASE  0 FILL ;' + #10;
+
+function TForth.FindLibPath(const Name: String): String;
+var
+  Lower, Dir, Parent, Candidate: String;
+  SearchDirs: array[0..1] of String;
+  S: Integer;
+begin
+  Result := '';
+  Lower := LowerCase(Name);
+  if (Length(Lower) < 3) or (Copy(Lower, Length(Lower) - 2, 3) <> '.fs') then
+    Lower := Lower + '.fs';
+  Dir := GetCurrentDir;
+  SearchDirs[0] := 'libs';
+  SearchDirs[1] := 'demos';
+  while True do
+  begin
+    for S := 0 to 1 do
+    begin
+      Candidate := IncludeTrailingPathDelimiter(Dir) + SearchDirs[S] +
+        PathDelim + Lower;
+      if FileExists(Candidate) then
+      begin
+        Result := Candidate;
+        Exit;
+      end;
+    end;
+    Parent := ExpandFileName(IncludeTrailingPathDelimiter(Dir) + '..');
+    if Parent = Dir then
+      Break;
+    Dir := Parent;
+  end;
+end;
+
+procedure TForth.WordAbortDict;
+begin
+  Abort;
+end;
+
+procedure TForth.WordRequire;
+var
+  Token: String;
+begin
+  if not ParseWord(Token) then
+    raise EForthError.Create('MODULE NAME EXPECTED');
+  RequireModule(Token);
+end;
+
 procedure TForth.InitPrimitives;
 begin
-  { Kernel registration grows as specs require. }
+  DefinePrimitive('KEY', @WordKey);
+  DefinePrimitive('EMIT', @WordEmit);
+  DefinePrimitive('CR', @WordCR);
+  DefinePrimitive('SPACE', @WordSpace);
+  DefinePrimitive('SPACES', @WordSpaces);
+  DefinePrimitive('TYPE', @WordType);
+  DefinePrimitive('BYE', @WordBye);
+  DefinePrimitive('EXPECT', @WordExpect);
+  DefinePrimitive('SPAN', @WordSpan);
+  DefinePrimitive('QUIT', @Quit);
+  DefinePrimitive('ABORT', @WordAbortDict);
+
+  DefinePrimitive('@', @WordFetch);
+  DefinePrimitive('!', @WordStore);
+  DefinePrimitive('C@', @WordCFetch);
+  DefinePrimitive('C!', @WordCStore);
+  DefinePrimitive('FILL', @WordFill);
+  DefinePrimitive('CMOVE', @WordCMove);
+  DefinePrimitive('CMOVE>', @WordCMoveGreater);
+
+  DefinePrimitive('DUP', @WordDup);
+  DefinePrimitive('DROP', @WordDrop);
+  DefinePrimitive('SWAP', @WordSwap);
+  DefinePrimitive('OVER', @WordOver);
+  DefinePrimitive('?DUP', @WordQDup);
+  DefinePrimitive('2SWAP', @WordTwoSwap);
+  DefinePrimitive('2OVER', @WordTwoOver);
+  DefinePrimitive('>R', @WordToR);
+  DefinePrimitive('R>', @WordRFrom);
+  DefinePrimitive('R@', @WordRFetch);
+
+  DefinePrimitive('+', @WordPlus);
+  DefinePrimitive('-', @WordMinus);
+  DefinePrimitive('*', @WordMultiply);
+  DefinePrimitive('/MOD', @WordSlashMod);
+  DefinePrimitive('AND', @WordAnd);
+  DefinePrimitive('OR', @WordOr);
+  DefinePrimitive('XOR', @WordXor);
+  DefinePrimitive('INVERT', @WordInvert);
+  DefinePrimitive('=', @WordEquals);
+  DefinePrimitive('<', @WordLess);
+  DefinePrimitive('>', @WordGreater);
+  DefinePrimitive('U<', @WordULess);
+  DefinePrimitive('U>', @WordUGreater);
+  DefinePrimitive('U<=', @WordULessEqual);
+  DefinePrimitive('U>=', @WordUGreaterEqual);
+
+  DefinePrimitive('FIND', @WordFind);
+  DefinePrimitive('''', @WordTick);
+  DefinePrimitive('>BODY', @WordToBody);
+  DefinePrimitive('DP', @WordDP);
+  DefinePrimitive('HERE', @WordHere);
+  DefinePrimitive('PAD', @WordPAD);
+  DefinePrimitive('ALLOT', @WordAllot);
+  DefinePrimitive(',', @WordComma);
+  DefinePrimitive('C,', @WordCComma);
+  DefinePrimitive('EXECUTE', @WordExecute);
+  DefinePrimitive('CREATE', @WordCreate);
+  DefinePrimitive('CONSTANT', @WordConstant);
+  DefinePrimitive('VARIABLE', @WordVariable);
+
+  DefinePrimitive('WORD', @WordWord);
+  DefinePrimitive('NUMBER', @WordNumber);
+  DefinePrimitive('BASE', @WordBase);
+  DefinePrimitive('INTERPRET', @WordInterpret);
+  DefinePrimitive('LIT', @WordLIT);
+  DefinePrimitive('STATE', @WordState);
+  DefineImmediate('[', @WordLeftBracket);
+  DefinePrimitive(']', @WordRightBracket);
+  DefineImmediate('LITERAL', @WordLiteral);
+  DefinePrimitive('COMPILE', @WordCompile);
+  DefineImmediate('[COMPILE]', @WordBracketCompile);
+  DefinePrimitive('EXIT', @WordExit);
+  DefinePrimitive(':', @WordColon);
+  DefineImmediate(';', @WordSemicolon);
+  DefineImmediate('IMMEDIATE', @WordImmediate);
+  DefineImmediate('RECURSE', @WordRecurse);
+
+  DefinePrimitive('BRANCH', @WordBranch);
+  DefinePrimitive('0BRANCH', @WordZeroBranch);
+  DefineImmediate('IF', @WordIF);
+  DefineImmediate('THEN', @WordTHEN);
+  DefineImmediate('ELSE', @WordELSE);
+  DefineImmediate('BEGIN', @WordBEGIN);
+  DefineImmediate('UNTIL', @WordUNTIL);
+  DefineImmediate('AGAIN', @WordAGAIN);
+  DefineImmediate('WHILE', @WordWHILE);
+  DefineImmediate('REPEAT', @WordREPEAT);
+  DefinePrimitive('(DO)', @WordDoRun);
+  DefinePrimitive('(LOOP)', @WordLoopRun);
+  DefinePrimitive('(+LOOP)', @WordPlusLoopRun);
+  DefinePrimitive('(LEAVE)', @WordLeaveRun);
+  DefinePrimitive('I', @WordI);
+  DefinePrimitive('J', @WordJ);
+  DefinePrimitive('UNLOOP', @WordUnloop);
+  DefineImmediate('DO', @WordDo);
+  DefineImmediate('LOOP', @WordLoop);
+  DefineImmediate('+LOOP', @WordPlusLoop);
+  DefineImmediate('LEAVE', @WordLeave);
+
+  DefinePrimitive('.', @WordDot);
+  DefinePrimitive('U.', @WordUDot);
+  DefinePrimitive('.S', @WordDotS);
+  DefinePrimitive('PAGE', @WordPage);
+  DefineImmediate('."', @WordDotQuote);
+  DefineImmediate('S"', @WordSQuote);
+  DefineImmediate('(', @WordParen);
+  DefineImmediate('\', @WordBackslash);
+  DefinePrimitive('EVALUATE', @WordEvaluate);
+  DefinePrimitive('INCLUDED', @WordIncluded);
+  DefinePrimitive('INCLUDE', @WordInclude);
+  DefinePrimitive('#REQUIRE', @WordRequire);
 end;
 
 procedure TForth.RequireModule(const ModuleName: String);
 var
-  Upper: String;
+  Upper, Path: String;
   I: Integer;
 begin
   Upper := UpperCase(ModuleName);
   for I := 0 to High(LoadedModules) do
     if LoadedModules[I] = Upper then
       Exit;
-  SetLength(LoadedModules, Length(LoadedModules) + 1);
-  LoadedModules[High(LoadedModules)] := Upper;
+  Path := FindLibPath(ModuleName);
+  if Path <> '' then
+  begin
+    SetLength(LoadedModules, Length(LoadedModules) + 1);
+    LoadedModules[High(LoadedModules)] := Upper;
+    LoadFile(Path);
+    Exit;
+  end;
   if Upper = 'CORE' then
   begin
-    { CORE colon library is installed in later specs. }
+    SetLength(LoadedModules, Length(LoadedModules) + 1);
+    LoadedModules[High(LoadedModules)] := Upper;
+    LoadSystem(CoreFSSource);
+    Exit;
   end;
+  raise EForthError.Create('MODULE NOT FOUND: ' + ModuleName);
 end;
 
 procedure TForth.Abort;

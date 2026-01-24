@@ -695,6 +695,56 @@ begin
   end;
 end;
 
+procedure TestRequireAndCore;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  XT: Integer;
+  Raised: Boolean;
+  W: TForthWord;
+begin
+  WriteLn('--- TestRequireAndCore ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    AssertTrue('CORE loaded at cold start', F.FindXT('NIP', XT));
+    AssertTrue('NIP is colon', F.Words[XT].Kind = wkColon);
+    AssertTrue('TUCK is colon', F.Lookup('TUCK', W) and (W.Kind = wkColon));
+    AssertTrue('ROT is colon', F.Lookup('ROT', W) and (W.Kind = wkColon));
+
+    F.InterpretLine('10 20 NIP');
+    AssertTrue('CORE NIP', F.PopDS = 20);
+
+    Raised := False;
+    try
+      F.SetLine('');
+      F.WordRequire;
+    except
+      on E: EForthError do
+      begin
+        Raised := True;
+        AssertTrue('MODULE NAME EXPECTED', E.Message = 'MODULE NAME EXPECTED');
+      end;
+    end;
+    AssertTrue('empty #REQUIRE raises', Raised);
+
+    Raised := False;
+    try
+      F.RequireModule('NOSUCHMODULE');
+    except
+      on E: EForthError do
+      begin
+        Raised := True;
+        AssertTrue('MODULE NOT FOUND', E.Message = 'MODULE NOT FOUND: NOSUCHMODULE');
+      end;
+    end;
+    AssertTrue('missing module raises', Raised);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
 procedure TestEvaluateAndInclude;
 var
   F: TForth;
@@ -1009,7 +1059,7 @@ begin
     F.DefinePrimitive('DUP', @F.WordDup);
     F.DefineImmediate('IF', @F.WordDrop);
     AssertTrue('FindXT DUP', F.FindXT('dup', XT));
-    AssertTrue('XT is 0', XT = 0);
+    AssertTrue('XT is latest DUP', XT = F.Latest - 1);
 
     F.CStore(3000, 3);
     F.CStore(3001, Ord('D'));
@@ -1018,7 +1068,7 @@ begin
     F.PushDS(3000);
     F.WordFind;
     AssertTrue('FIND flag -1', F.PopDS = -1);
-    AssertTrue('FIND xt', F.PopDS = 0);
+    AssertTrue('FIND xt', F.PopDS = TCell(XT));
 
     F.CStore(3010, 2);
     F.CStore(3011, Ord('I'));
@@ -1039,7 +1089,7 @@ begin
 
     F.SetLine('DUP');
     F.WordTick;
-    AssertTrue(''' DUP xt', F.PopDS = 0);
+    AssertTrue(''' DUP xt', F.PopDS = TCell(XT));
 
     Raised := False;
     try
@@ -1524,6 +1574,7 @@ begin
   TestNumericOutput;
   TestStringsAndComments;
   TestEvaluateAndInclude;
+  TestRequireAndCore;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
