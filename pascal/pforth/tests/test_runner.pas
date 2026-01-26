@@ -700,6 +700,141 @@ begin
   end;
 end;
 
+function CaptureLoad(const Src: String): String;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+begin
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.LoadSystem(Src);
+    SetLength(Result, OutStream.Size);
+    if OutStream.Size > 0 then
+    begin
+      OutStream.Position := 0;
+      OutStream.Read(Result[1], OutStream.Size);
+    end;
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
+procedure TestDemonstrations;
+var
+  OutText: String;
+  Expected: String;
+begin
+  WriteLn('--- TestDemonstrations ---');
+
+  OutText := CaptureLoad(
+    ': HELLO' + #10 +
+    '  ." Hello, world!" CR' + #10 +
+    ';' + #10 +
+    'HELLO' + #10);
+  AssertTrue('Hello World', OutText = 'Hello, world!' + #10);
+
+  OutText := CaptureLoad(
+    ': FACTORIAL ( n -- n! )' + #10 +
+    '  DUP 1 >' + #10 +
+    '  IF' + #10 +
+    '    DUP 1 - RECURSE *' + #10 +
+    '  THEN' + #10 +
+    ';' + #10 +
+    '5 FACTORIAL . CR' + #10 +
+    '7 FACTORIAL . CR' + #10);
+  AssertTrue('Factorial', OutText = '120 ' + #10 + '5040 ' + #10);
+
+  OutText := CaptureLoad(
+    ': FIB ( n -- fib[n] )' + #10 +
+    '  0 1 ROT 0 DO' + #10 +
+    '    TUCK +' + #10 +
+    '  LOOP DROP' + #10 +
+    ';' + #10 +
+    '10 FIB . CR' + #10);
+  AssertTrue('Fibonacci', OutText = '55 ' + #10);
+
+  OutText := CaptureLoad(
+    'CREATE DATA 9 C, 8 C, 7 C, 6 C, 5 C, 4 C, 3 C, 2 C, 1 C, 0 C,' + #10 +
+    ': PRINT' + #10 +
+    '  10 0 DO DATA I + C@ . LOOP CR' + #10 +
+    ';' + #10 +
+    ': BUBBLE ( addr len -- )' + #10 +
+    '  DUP 1 DO' + #10 +
+    '    DUP I - 0 DO' + #10 +
+    '      OVER I + DUP 1+' + #10 +
+    '      OVER C@ OVER C@' + #10 +
+    '      2DUP > IF' + #10 +
+    '        SWAP ROT C! SWAP C!' + #10 +
+    '      ELSE' + #10 +
+    '        2DROP 2DROP' + #10 +
+    '      THEN' + #10 +
+    '    LOOP' + #10 +
+    '  LOOP' + #10 +
+    '  2DROP' + #10 +
+    ';' + #10 +
+    'DATA 10 BUBBLE' + #10 +
+    'PRINT' + #10);
+  AssertTrue('Bubble sort', OutText = '0 1 2 3 4 5 6 7 8 9 ' + #10);
+
+  OutText := CaptureLoad(
+    '8190 CONSTANT SIZE' + #10 +
+    'VARIABLE FLAGS SIZE ALLOT' + #10 +
+    ': SETUP-FLAGS' + #10 +
+    '  SIZE 0 DO' + #10 +
+    '    1 FLAGS I + C!' + #10 +
+    '  LOOP ;' + #10 +
+    ': SIEVE' + #10 +
+    '  SETUP-FLAGS' + #10 +
+    '  0' + #10 +
+    '  SIZE 0 DO' + #10 +
+    '    FLAGS I + C@ IF' + #10 +
+    '      I I + 3 +' + #10 +
+    '      DUP I +' + #10 +
+    '      BEGIN' + #10 +
+    '        DUP SIZE <' + #10 +
+    '      WHILE' + #10 +
+    '        DUP FLAGS + 0 SWAP C!' + #10 +
+    '        OVER +' + #10 +
+    '      REPEAT' + #10 +
+    '      DROP DROP 1 +' + #10 +
+    '    THEN' + #10 +
+    '  LOOP' + #10 +
+    '  . CR' + #10 +
+    ';' + #10 +
+    'SIEVE' + #10);
+  AssertTrue('Sieve', OutText = '1899 ' + #10);
+
+  Expected :=
+    'Move 1 -> 3 ' + #10 +
+    'Move 1 -> 2 ' + #10 +
+    'Move 3 -> 2 ' + #10 +
+    'Move 1 -> 3 ' + #10 +
+    'Move 2 -> 1 ' + #10 +
+    'Move 2 -> 3 ' + #10 +
+    'Move 1 -> 3 ' + #10;
+  OutText := CaptureLoad(
+    'VARIABLE SRC' + #10 +
+    'VARIABLE DEST' + #10 +
+    'VARIABLE AUX' + #10 +
+    ': HANOI ( n src dest aux -- )' + #10 +
+    '  AUX ! DEST ! SRC !' + #10 +
+    '  DUP IF' + #10 +
+    '    SRC @ DEST @ AUX @' + #10 +
+    '    >R >R >R' + #10 +
+    '    DUP 1- SRC @ AUX @ DEST @ RECURSE' + #10 +
+    '    R> SRC ! R> DEST ! R> AUX !' + #10 +
+    '    ." Move " SRC @ . ." -> " DEST @ . CR' + #10 +
+    '    1- AUX @ DEST @ SRC @ RECURSE' + #10 +
+    '  ELSE' + #10 +
+    '    DROP' + #10 +
+    '  THEN' + #10 +
+    ';' + #10 +
+    '3 1 3 2 HANOI' + #10);
+  AssertTrue('Tower of Hanoi', OutText = Expected);
+end;
+
 procedure TestRequireAndCore;
 var
   F: TForth;
@@ -1580,6 +1715,7 @@ begin
   TestStringsAndComments;
   TestEvaluateAndInclude;
   TestRequireAndCore;
+  TestDemonstrations;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
