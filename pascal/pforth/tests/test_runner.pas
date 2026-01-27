@@ -721,6 +721,34 @@ begin
   end;
 end;
 
+procedure TestRunningAndEof;
+var
+  F: TForth;
+  InStream, OutStream: TStringStream;
+begin
+  WriteLn('--- TestRunningAndEof ---');
+  InStream := TStringStream.Create('');
+  OutStream := TStringStream.Create('');
+  F := TForth.Create(InStream, OutStream);
+  try
+    AssertTrue('RUNNING true', F.Running);
+    F.WordRunning;
+    AssertTrue('RUNNING pushes -1', F.PopDS = -1);
+
+    F.PushDS(2000);
+    F.PushDS(20);
+    F.WordExpect;
+    AssertTrue('EXPECT EOF clears Running', not F.Running);
+    AssertTrue('EXPECT EOF SPAN 0', F.FetchCell(1000) = 0);
+    F.WordRunning;
+    AssertTrue('RUNNING pushes 0', F.PopDS = 0);
+  finally
+    F.Free;
+    InStream.Free;
+    OutStream.Free;
+  end;
+end;
+
 procedure TestWordsAndDump;
 var
   F: TForth;
@@ -1774,6 +1802,7 @@ begin
   TestStringsAndComments;
   TestEvaluateAndInclude;
   TestRequireAndCore;
+  TestRunningAndEof;
   TestWordsAndDump;
   TestDemonstrations;
 

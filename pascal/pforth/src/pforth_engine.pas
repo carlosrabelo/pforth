@@ -251,6 +251,7 @@ type
     // System tools
     procedure WordWords;
     procedure WordDump;
+    procedure WordRunning;
 
     // REPL / cold start (001.4)
     procedure InitPrimitives;
@@ -587,13 +588,22 @@ begin
     if InputStream <> nil then
     begin
       if InputStream.Position >= InputStream.Size then
+      begin
+        if Count = 0 then
+          Running := False; // EOF with nothing read
         Break;
+      end;
       InputStream.Read(B, 1);
       Ch := Chr(B);
     end
     else
     begin
-      if Eof then Break;
+      if Eof then
+      begin
+        if Count = 0 then
+          Running := False;
+        Break;
+      end;
       Read(Ch);
     end;
 
@@ -2340,6 +2350,14 @@ begin
   RequireModule(Token);
 end;
 
+procedure TForth.WordRunning;
+begin
+  if Running then
+    PushDS(-1)
+  else
+    PushDS(0);
+end;
+
 procedure TForth.WordWords;
 var
   I: Integer;
@@ -2519,6 +2537,7 @@ begin
   DefinePrimitive('INCLUDE', @WordInclude);
   DefinePrimitive('#REQUIRE', @WordRequire);
 
+  DefinePrimitive('RUNNING', @WordRunning);
   DefinePrimitive('WORDS', @WordWords);
   DefinePrimitive('DUMP', @WordDump);
 end;
