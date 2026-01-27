@@ -248,6 +248,10 @@ type
     procedure WordRequire;
     procedure WordAbortDict;
 
+    // System tools
+    procedure WordWords;
+    procedure WordDump;
+
     // REPL / cold start (001.4)
     procedure InitPrimitives;
     procedure RequireModule(const ModuleName: String);
@@ -2336,6 +2340,70 @@ begin
   RequireModule(Token);
 end;
 
+procedure TForth.WordWords;
+var
+  I: Integer;
+  First: Boolean;
+begin
+  First := True;
+  for I := High(Words) downto 0 do
+  begin
+    if not First then
+      EmitString(' ');
+    First := False;
+    if Words[I].Immediate then
+      EmitString('I:');
+    EmitString(Words[I].Name);
+  end;
+  EmitString(#10);
+end;
+
+procedure TForth.WordDump;
+var
+  Len, Addr, Remaining, Want, Fit, I: Integer;
+  B: Byte;
+  Hex: String;
+begin
+  Len := Integer(PopDS);
+  Addr := ZeroExtendAddr(PopDS);
+  if Len <= 0 then
+    Exit;
+  Remaining := Len;
+  while Remaining > 0 do
+  begin
+    if (Addr < 0) or (Addr > 65535) then
+      raise EForthError.Create('OUT OF MEMORY RANGE');
+    Want := Remaining;
+    if Want > 16 then
+      Want := 16;
+    Fit := Want;
+    if Addr + Fit > 65536 then
+      Fit := 65536 - Addr;
+    Hex := IntToHex(Addr, 4);
+    EmitString(Hex + '  ');
+    for I := 0 to Fit - 1 do
+    begin
+      if I > 0 then
+        EmitString(' ');
+      EmitString(IntToHex(Memory[Addr + I], 2));
+    end;
+    EmitString('  ');
+    for I := 0 to Fit - 1 do
+    begin
+      B := Memory[Addr + I];
+      if (B >= 32) and (B <= 126) then
+        EmitChar(Chr(B))
+      else
+        EmitChar('.');
+    end;
+    EmitString(#10);
+    Inc(Addr, Fit);
+    Dec(Remaining, Fit);
+    if Fit < Want then
+      raise EForthError.Create('OUT OF MEMORY RANGE');
+  end;
+end;
+
 procedure TForth.InitPrimitives;
 begin
   DefinePrimitive('KEY', @WordKey);
@@ -2450,6 +2518,9 @@ begin
   DefinePrimitive('INCLUDED', @WordIncluded);
   DefinePrimitive('INCLUDE', @WordInclude);
   DefinePrimitive('#REQUIRE', @WordRequire);
+
+  DefinePrimitive('WORDS', @WordWords);
+  DefinePrimitive('DUMP', @WordDump);
 end;
 
 procedure TForth.RequireModule(const ModuleName: String);

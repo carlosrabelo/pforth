@@ -721,6 +721,65 @@ begin
   end;
 end;
 
+procedure TestWordsAndDump;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  OutText: String;
+  Raised: Boolean;
+begin
+  WriteLn('--- TestWordsAndDump ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    SetLength(F.Words, 0);
+    F.Latest := -1;
+    F.DefinePrimitive('AAA', @F.WordDup);
+    F.DefineImmediate('BBB', @F.WordDrop);
+    OutStream.Clear;
+    F.WordWords;
+    SetLength(OutText, OutStream.Size);
+    if OutStream.Size > 0 then
+    begin
+      OutStream.Position := 0;
+      OutStream.Read(OutText[1], OutStream.Size);
+    end;
+    AssertTrue('WORDS newest-first', OutText = 'I:BBB AAA' + #10);
+
+    F.CStore(1024, Ord('A'));
+    F.CStore(1025, Ord('B'));
+    F.CStore(1026, 0);
+    OutStream.Clear;
+    F.PushDS(1024);
+    F.PushDS(3);
+    F.WordDump;
+    SetLength(OutText, OutStream.Size);
+    if OutStream.Size > 0 then
+    begin
+      OutStream.Position := 0;
+      OutStream.Read(OutText[1], OutStream.Size);
+    end;
+    AssertTrue('DUMP row', OutText = '0400  41 42 00  AB.' + #10);
+
+    Raised := False;
+    try
+      F.PushDS(65530);
+      F.PushDS(10);
+      F.WordDump;
+    except
+      on E: EForthError do
+      begin
+        Raised := True;
+        AssertTrue('DUMP OOR msg', E.Message = 'OUT OF MEMORY RANGE');
+      end;
+    end;
+    AssertTrue('DUMP OOR raises', Raised);
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
 procedure TestDemonstrations;
 var
   OutText: String;
@@ -1715,6 +1774,7 @@ begin
   TestStringsAndComments;
   TestEvaluateAndInclude;
   TestRequireAndCore;
+  TestWordsAndDump;
   TestDemonstrations;
 
   WriteLn('----------------------------------------');
