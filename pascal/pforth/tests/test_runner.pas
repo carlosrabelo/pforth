@@ -721,6 +721,42 @@ begin
   end;
 end;
 
+procedure TestRestOfLineAndError;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  Msg: String;
+  I: Integer;
+begin
+  WriteLn('--- TestRestOfLineAndError ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  try
+    F.SetLine('  hello world');
+    F.PushDS(4000);
+    F.PushDS(64);
+    F.WordRestOfLine;
+    AssertTrue('REST-OF-LINE count', F.PopDS = 11);
+    AssertTrue('REST-OF-LINE bytes', (Chr(F.Memory[4000]) = 'h') and (Chr(F.Memory[4010]) = 'd'));
+    AssertTrue('REST-OF-LINE consumes tib', F.IN_PTR = Length(F.TIB) + 1);
+
+    for I := 0 to 4 do
+      F.Memory[5000 + I] := Ord(Copy('BOOM!', I + 1, 1)[1]);
+    Msg := '';
+    try
+      F.PushDS(5000);
+      F.PushDS(5);
+      F.WordError;
+    except
+      on E: EForthError do Msg := E.Message;
+    end;
+    AssertTrue('ERROR message', Msg = 'BOOM!');
+  finally
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
 procedure TestLoadFileAndSaveFile;
 var
   F: TForth;
@@ -1888,6 +1924,7 @@ begin
   TestStringsAndComments;
   TestEvaluateAndInclude;
   TestRequireAndCore;
+  TestRestOfLineAndError;
   TestLoadFileAndSaveFile;
   TestRunningAndEof;
   TestWordsAndDump;

@@ -256,6 +256,8 @@ type
     procedure WordRunning;
     procedure WordLoadFile;
     procedure WordSaveFile;
+    procedure WordRestOfLine;
+    procedure WordError;
 
     // REPL / cold start (001.4)
     procedure InitPrimitives;
@@ -2356,6 +2358,55 @@ begin
   RequireModule(Token);
 end;
 
+procedure TForth.WordRestOfLine;
+var
+  MaxLen, Addr, N, Start, Rest: Integer;
+begin
+  MaxLen := Integer(PopDS);
+  Addr := ZeroExtendAddr(PopDS);
+  while (IN_PTR <= Length(TIB)) and (TIB[IN_PTR] = ' ') do
+    Inc(IN_PTR);
+  Start := IN_PTR;
+  if Start > Length(TIB) + 1 then
+    Start := Length(TIB) + 1;
+  Rest := Length(TIB) - Start + 1;
+  if Rest < 0 then
+    Rest := 0;
+  IN_PTR := Length(TIB) + 1;
+  N := 0;
+  if MaxLen > 0 then
+  begin
+    N := Rest;
+    if N > MaxLen then
+      N := MaxLen;
+    if N > 65536 - Addr then
+      N := 65536 - Addr;
+  end;
+  if N > 0 then
+    Move(TIB[Start], Memory[Addr], N);
+  PushDS(TCell(N));
+end;
+
+procedure TForth.WordError;
+var
+  Len, Addr, N, I: Integer;
+  Msg: String;
+begin
+  Len := Integer(PopDS);
+  Addr := ZeroExtendAddr(PopDS);
+  N := 0;
+  if Len > 0 then
+  begin
+    N := Len;
+    if N > 65536 - Addr then
+      N := 65536 - Addr;
+  end;
+  Msg := '';
+  for I := 0 to N - 1 do
+    Msg := Msg + Chr(Memory[Addr + I]);
+  raise EForthError.Create(Msg);
+end;
+
 procedure TForth.WordLoadFile;
 var
   Token: String;
@@ -2613,6 +2664,8 @@ begin
   DefinePrimitive('RUNNING', @WordRunning);
   DefinePrimitive('LOAD-FILE', @WordLoadFile);
   DefinePrimitive('SAVE-FILE', @WordSaveFile);
+  DefinePrimitive('REST-OF-LINE', @WordRestOfLine);
+  DefinePrimitive('ERROR', @WordError);
   DefinePrimitive('WORDS', @WordWords);
   DefinePrimitive('DUMP', @WordDump);
 end;
