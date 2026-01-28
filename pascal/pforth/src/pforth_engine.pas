@@ -42,6 +42,8 @@ type
     TIB: String;
     IN_PTR: Integer;
     LoadedModules: TStringSet;
+    LastSavePath: String;
+    HasSavePath: Boolean;
 
     constructor Create(AInput: TStream = nil; AOutput: TStream = nil);
     destructor Destroy; override;
@@ -252,6 +254,8 @@ type
     procedure WordWords;
     procedure WordDump;
     procedure WordRunning;
+    procedure WordLoadFile;
+    procedure WordSaveFile;
 
     // REPL / cold start (001.4)
     procedure InitPrimitives;
@@ -272,6 +276,8 @@ begin
   SetLength(RS, 0);
   SetLength(CompileList, 0);
   SetLength(LoadedModules, 0);
+  LastSavePath := '';
+  HasSavePath := False;
   SetLength(Words, 0);
   SetLength(CurrentBody, 0);
   FillChar(Memory, SizeOf(Memory), 0);
@@ -2350,6 +2356,73 @@ begin
   RequireModule(Token);
 end;
 
+procedure TForth.WordLoadFile;
+var
+  Token: String;
+  MaxLen, Addr, N: Integer;
+  FS: TFileStream;
+begin
+  if not ParseWord(Token) then
+    raise EForthError.Create('FILE NAME EXPECTED');
+  MaxLen := Integer(PopDS);
+  Addr := ZeroExtendAddr(PopDS);
+  LastSavePath := Token;
+  HasSavePath := True;
+  if MaxLen <= 0 then
+  begin
+    PushDS(0);
+    Exit;
+  end;
+  try
+    FS := TFileStream.Create(Token, fmOpenRead or fmShareDenyNone);
+  except
+    raise EForthError.Create('CANNOT OPEN: ' + Token);
+  end;
+  try
+    N := MaxLen;
+    if FS.Size < N then
+      N := Integer(FS.Size);
+    if N > 65536 - Addr then
+      N := 65536 - Addr;
+    if N > 0 then
+      N := FS.Read(Memory[Addr], N)
+    else
+      N := 0;
+  finally
+    FS.Free;
+  end;
+  PushDS(TCell(N));
+end;
+
+procedure TForth.WordSaveFile;
+var
+  Len, Addr, N: Integer;
+  FS: TFileStream;
+begin
+  if not HasSavePath then
+    raise EForthError.Create('EDITOR FILE');
+  Len := Integer(PopDS);
+  Addr := ZeroExtendAddr(PopDS);
+  N := 0;
+  if Len > 0 then
+  begin
+    N := Len;
+    if N > 65536 - Addr then
+      N := 65536 - Addr;
+  end;
+  try
+    FS := TFileStream.Create(LastSavePath, fmCreate);
+  except
+    raise EForthError.Create('CANNOT OPEN: ' + LastSavePath);
+  end;
+  try
+    if N > 0 then
+      FS.WriteBuffer(Memory[Addr], N);
+  finally
+    FS.Free;
+  end;
+end;
+
 procedure TForth.WordRunning;
 begin
   if Running then
@@ -2538,6 +2611,8 @@ begin
   DefinePrimitive('#REQUIRE', @WordRequire);
 
   DefinePrimitive('RUNNING', @WordRunning);
+  DefinePrimitive('LOAD-FILE', @WordLoadFile);
+  DefinePrimitive('SAVE-FILE', @WordSaveFile);
   DefinePrimitive('WORDS', @WordWords);
   DefinePrimitive('DUMP', @WordDump);
 end;
