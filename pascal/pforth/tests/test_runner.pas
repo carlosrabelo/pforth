@@ -721,6 +721,92 @@ begin
   end;
 end;
 
+procedure TestLoadFileAndSaveFile;
+var
+  F: TForth;
+  OutStream: TMemoryStream;
+  Path, Missing, Msg: String;
+  SL: TStringList;
+  FS: TFileStream;
+  Buf: String;
+begin
+  WriteLn('--- TestLoadFileAndSaveFile ---');
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(nil, OutStream);
+  Path := GetTempDir + 'pforth_lsf_test.txt';
+  Missing := Path + '.missing';
+  try
+    F.DefinePrimitive('LOAD-FILE', @F.WordLoadFile);
+    F.DefinePrimitive('SAVE-FILE', @F.WordSaveFile);
+    SL := TStringList.Create;
+    try
+      SL.Text := 'hello';
+      SL.SaveToFile(Path);
+    finally
+      SL.Free;
+    end;
+
+    Msg := '';
+    try
+      F.InterpretLine('0 0 SAVE-FILE');
+    except
+      on E: EForthError do Msg := E.Message;
+    end;
+    AssertTrue('SAVE-FILE without path', Msg = 'EDITOR FILE');
+    while F.DepthDS > 0 do F.PopDS;
+
+    Msg := '';
+    try
+      F.SetLine('');
+      F.PushDS(2000);
+      F.PushDS(100);
+      F.WordLoadFile;
+    except
+      on E: EForthError do Msg := E.Message;
+    end;
+    AssertTrue('LOAD-FILE no token', Msg = 'FILE NAME EXPECTED');
+    while F.DepthDS > 0 do F.PopDS;
+
+    F.InterpretLine('2000 100 LOAD-FILE ' + Path);
+    AssertTrue('LOAD-FILE count', F.PopDS >= 5);
+    AssertTrue('LOAD-FILE bytes', (Chr(F.Memory[2000]) = 'h') and (Chr(F.Memory[2004]) = 'o'));
+    F.InterpretLine('2000 3 LOAD-FILE ' + Path);
+    AssertTrue('LOAD-FILE maxlen', F.PopDS = 3);
+
+    F.Memory[3000] := Ord('o');
+    F.Memory[3001] := Ord('k');
+    F.InterpretLine('3000 2 SAVE-FILE');
+    FS := TFileStream.Create(Path, fmOpenRead);
+    try
+      SetLength(Buf, FS.Size);
+      if FS.Size > 0 then FS.Read(Buf[1], FS.Size);
+    finally
+      FS.Free;
+    end;
+    AssertTrue('SAVE-FILE content', Buf = 'ok');
+    F.InterpretLine('3000 0 SAVE-FILE');
+    FS := TFileStream.Create(Path, fmOpenRead);
+    try
+      AssertTrue('SAVE-FILE empty', FS.Size = 0);
+    finally
+      FS.Free;
+    end;
+
+    Msg := '';
+    try
+      F.InterpretLine('2000 10 LOAD-FILE ' + Missing);
+    except
+      on E: EForthError do Msg := E.Message;
+    end;
+    AssertTrue('LOAD-FILE missing', Msg = 'CANNOT OPEN: ' + Missing);
+  finally
+    if FileExists(Path) then
+      DeleteFile(Path);
+    F.Free;
+    OutStream.Free;
+  end;
+end;
+
 procedure TestRunningAndEof;
 var
   F: TForth;
@@ -1802,6 +1888,7 @@ begin
   TestStringsAndComments;
   TestEvaluateAndInclude;
   TestRequireAndCore;
+  TestLoadFileAndSaveFile;
   TestRunningAndEof;
   TestWordsAndDump;
   TestDemonstrations;
