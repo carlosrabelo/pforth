@@ -721,6 +721,128 @@ begin
   end;
 end;
 
+function ReadFileText(const Path: String): String;
+var
+  FS: TFileStream;
+begin
+  FS := TFileStream.Create(Path, fmOpenRead);
+  try
+    SetLength(Result, FS.Size);
+    if FS.Size > 0 then FS.Read(Result[1], FS.Size);
+  finally
+    FS.Free;
+  end;
+end;
+
+function StreamText(S: TMemoryStream): String;
+begin
+  SetLength(Result, S.Size);
+  if S.Size > 0 then
+  begin
+    S.Position := 0;
+    S.Read(Result[1], S.Size);
+  end;
+end;
+
+function ForthErrorOf(F: TForth; const Line: String): String;
+begin
+  Result := '';
+  try
+    F.InterpretLine(Line);
+  except
+    on E: EForthError do Result := E.Message;
+  end;
+end;
+
+function HasModule(F: TForth; const Name: String): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 0 to High(F.LoadedModules) do
+    if F.LoadedModules[I] = Name then Exit(True);
+end;
+
+function ExpectedBlankListing: String;
+var
+  Line: Integer;
+begin
+  Result := '0: first line' + #10;
+  for Line := 1 to 15 do
+    Result := Result + IntToStr(Line) + ': ' + #10;
+end;
+
+procedure TestBlockEditor;
+var
+  F: TForth;
+  InStream, OutStream: TMemoryStream;
+  Path, Listing, Saved, Tail: String;
+begin
+  WriteLn('--- TestBlockEditor ---');
+  InStream := TMemoryStream.Create;
+  OutStream := TMemoryStream.Create;
+  F := TForth.Create(InStream, OutStream);
+  Path := GetTempDir + 'pforth_editor_pascal_' + IntToStr(GetProcessID) + '.blk';
+  try
+    AssertTrue('LIST unknown before require', ForthErrorOf(F, 'LIST') = 'UNKNOWN WORD: LIST');
+    F.InterpretLine('#REQUIRE EDITOR');
+    AssertTrue('EDITOR in loaded modules', HasModule(F, 'EDITOR'));
+
+    AssertTrue('FLUSH without file', ForthErrorOf(F, 'FLUSH') = 'EDITOR FILE');
+    AssertTrue('OPEN without name', ForthErrorOf(F, 'OPEN') = 'FILE NAME EXPECTED');
+    AssertTrue('OPEN missing path',
+      ForthErrorOf(F, 'OPEN /no/such/dir/block.txt') = 'CANNOT OPEN: /no/such/dir/block.txt');
+
+    // File content is exactly "first line" (no trailing newline).
+    with TFileStream.Create(Path, fmCreate) do
+    try
+      WriteBuffer('first line'[1], 10);
+    finally
+      Free;
+    end;
+
+    F.InterpretLine('OPEN ' + Path);
+    OutStream.Clear;
+    F.InterpretLine('LIST');
+    AssertTrue('LIST initial blank listing', StreamText(OutStream) = ExpectedBlankListing);
+
+    F.InterpretLine('0 P hello world');
+    F.InterpretLine('15 P last');
+    F.InterpretLine('3 P');
+    AssertTrue('16 P rejected', ForthErrorOf(F, '16 P x') = 'EDITOR LINE');
+    AssertTrue('-1 P rejected', ForthErrorOf(F, '-1 P x') = 'EDITOR LINE');
+    OutStream.Clear;
+    F.InterpretLine('LIST');
+    Listing := StreamText(OutStream);
+    Tail := '0: hello world' + #10 + '1: ' + #10 + '2: ' + #10 + '3: ' + #10;
+    AssertTrue('LIST prefix', Copy(Listing, 1, Length(Tail)) = Tail);
+    Tail := '15: last' + #10;
+    AssertTrue('LIST suffix', Copy(Listing, Length(Listing) - Length(Tail) + 1, Length(Tail)) = Tail);
+
+    F.InterpretLine('1 P ' + StringOfChar('x', 70));
+    F.InterpretLine('FLUSH');
+    Saved := ReadFileText(Path);
+    AssertTrue('FLUSH writes 1024 bytes', Length(Saved) = 1024);
+    AssertTrue('saved line 0', Copy(Saved, 1, 64) = 'hello world' + StringOfChar(' ', 53));
+    AssertTrue('saved line 1 truncated to 64', Copy(Saved, 65, 64) = StringOfChar('x', 64));
+    AssertTrue('saved line 2 blank', Copy(Saved, 129, 4) = '    ');
+    AssertTrue('saved line 15', Copy(Saved, 15 * 64 + 1, 4) = 'last');
+
+    F.InterpretLine('OPEN ' + Path);
+    OutStream.Clear;
+    F.InterpretLine('LIST');
+    Listing := StreamText(OutStream);
+    Tail := '0: hello world' + #10 + '1: xxxx';
+    AssertTrue('reopened listing', Copy(Listing, 1, Length(Tail)) = Tail);
+  finally
+    if FileExists(Path) then
+      DeleteFile(Path);
+    F.Free;
+    InStream.Free;
+    OutStream.Free;
+  end;
+end;
+
 procedure TestRestOfLineAndError;
 var
   F: TForth;
@@ -1924,6 +2046,7 @@ begin
   TestStringsAndComments;
   TestEvaluateAndInclude;
   TestRequireAndCore;
+  TestBlockEditor;
   TestRestOfLineAndError;
   TestLoadFileAndSaveFile;
   TestRunningAndEof;

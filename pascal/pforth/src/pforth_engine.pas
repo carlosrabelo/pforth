@@ -2314,31 +2314,57 @@ const
 
 function TForth.FindLibPath(const Name: String): String;
 var
-  Lower, Dir, Parent, Candidate: String;
-  SearchDirs: array[0..1] of String;
-  S: Integer;
+  FileName, Env, Dir, Parent, Candidate, ExeDir: String;
+
+  function TryPath(const APath: String): Boolean;
+  begin
+    Result := FileExists(APath);
+    if Result then
+      FindLibPath := APath;
+  end;
+
 begin
   Result := '';
-  Lower := LowerCase(Name);
-  if (Length(Lower) < 3) or (Copy(Lower, Length(Lower) - 2, 3) <> '.fs') then
-    Lower := Lower + '.fs';
+  FileName := LowerCase(Name);
+  if (Length(FileName) < 3) or (Copy(FileName, Length(FileName) - 2, 3) <> '.fs') then
+    FileName := FileName + '.fs';
+
+  // 1. $PFORTH_LIB/<file>
+  Env := GetEnvironmentVariable('PFORTH_LIB');
+  if Env <> '' then
+    if TryPath(IncludeTrailingPathDelimiter(Env) + FileName) then
+      Exit;
+
+  // 2. ./pforth/<file> from cwd
   Dir := GetCurrentDir;
-  SearchDirs[0] := 'libs';
-  SearchDirs[1] := 'demos';
+  if TryPath(IncludeTrailingPathDelimiter(Dir) + 'pforth' + PathDelim + FileName) then
+    Exit;
+
+  // 3. <exe_dir>/../pforth/<file>, then <exe_dir>/pforth/<file>
+  ExeDir := ExtractFilePath(ParamStr(0));
+  if ExeDir <> '' then
+  begin
+    ExeDir := ExcludeTrailingPathDelimiter(ExpandFileName(ExeDir));
+    Candidate := ExpandFileName(ExeDir + PathDelim + '..' + PathDelim + 'pforth' +
+      PathDelim + FileName);
+    if TryPath(Candidate) then
+      Exit;
+    if TryPath(ExeDir + PathDelim + 'pforth' + PathDelim + FileName) then
+      Exit;
+  end;
+
+  // 4. /usr/share/pforth/<file>
+  if TryPath('/usr/share/pforth/' + FileName) then
+    Exit;
+
+  // 5. Walk cwd parents for demos/<file> only
   while True do
   begin
-    for S := 0 to 1 do
-    begin
-      Candidate := IncludeTrailingPathDelimiter(Dir) + SearchDirs[S] +
-        PathDelim + Lower;
-      if FileExists(Candidate) then
-      begin
-        Result := Candidate;
-        Exit;
-      end;
-    end;
+    Candidate := IncludeTrailingPathDelimiter(Dir) + 'demos' + PathDelim + FileName;
+    if TryPath(Candidate) then
+      Exit;
     Parent := ExpandFileName(IncludeTrailingPathDelimiter(Dir) + '..');
-    if Parent = Dir then
+    if (Parent = Dir) or (Parent = '') then
       Break;
     Dir := Parent;
   end;
