@@ -843,6 +843,78 @@ begin
   end;
 end;
 
+function PlayScript(const Script: String; out RunningAfter, HasAdventure: Boolean): String;
+var
+  F: TForth;
+  InStream, OutStream: TMemoryStream;
+begin
+  InStream := TMemoryStream.Create;
+  OutStream := TMemoryStream.Create;
+  if Length(Script) > 0 then
+  begin
+    InStream.Write(Script[1], Length(Script));
+    InStream.Position := 0;
+  end;
+  F := TForth.Create(InStream, OutStream);
+  try
+    OutStream.Clear;
+    AssertTrue('PLAY unknown before require', ForthErrorOf(F, 'PLAY') = 'UNKNOWN WORD: PLAY');
+    F.InterpretLine('#REQUIRE ADVENTURE');
+    F.InterpretLine('PLAY');
+    RunningAfter := F.Running;
+    HasAdventure := HasModule(F, 'ADVENTURE');
+    Result := StreamText(OutStream);
+  finally
+    F.Free;
+    InStream.Free;
+    OutStream.Free;
+  end;
+end;
+
+procedure TestTextAdventure;
+var
+  Out: String;
+  RunningAfter, HasAdventure: Boolean;
+begin
+  WriteLn('--- TestTextAdventure ---');
+  Out := PlayScript('NORTH' + #10 + 'EAST' + #10, RunningAfter, HasAdventure);
+  AssertTrue('adventure basic transcript', Out =
+    'You are in a small room.' + #10 +
+    'Exits: NORTH' + #10 +
+    '> NORTH' + #10 +
+    'You are in a hall.' + #10 +
+    'Exits: SOUTH EAST' + #10 +
+    '> EAST' + #10 +
+    'You found the key.' + #10 +
+    '> ');
+  AssertTrue('adventure stops at EOF', not RunningAfter);
+  AssertTrue('ADVENTURE in loaded modules', HasAdventure);
+
+  Out := PlayScript('west' + #10 + ' north ' + #10 + 'NORTH' + #10 + 'SOUTH' + #10 + 'EAST' + #10,
+    RunningAfter, HasAdventure);
+  AssertTrue('adventure wander transcript', Out =
+    'You are in a small room.' + #10 +
+    'Exits: NORTH' + #10 +
+    '> west' + #10 +
+    'Can''t go that way.' + #10 +
+    'You are in a small room.' + #10 +
+    'Exits: NORTH' + #10 +
+    '>  north ' + #10 +
+    'You are in a hall.' + #10 +
+    'Exits: SOUTH EAST' + #10 +
+    '> NORTH' + #10 +
+    'Can''t go that way.' + #10 +
+    'You are in a hall.' + #10 +
+    'Exits: SOUTH EAST' + #10 +
+    '> SOUTH' + #10 +
+    'You are in a small room.' + #10 +
+    'Exits: NORTH' + #10 +
+    '> EAST' + #10 +
+    'Can''t go that way.' + #10 +
+    'You are in a small room.' + #10 +
+    'Exits: NORTH' + #10 +
+    '> ');
+end;
 procedure TestRestOfLineAndError;
 var
   F: TForth;
@@ -2047,6 +2119,7 @@ begin
   TestEvaluateAndInclude;
   TestRequireAndCore;
   TestBlockEditor;
+  TestTextAdventure;
   TestRestOfLineAndError;
   TestLoadFileAndSaveFile;
   TestRunningAndEof;
