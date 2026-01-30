@@ -1,0 +1,12 @@
+[package]
+name = "pforth"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "pforth"
+path = "src/main.rs"
+
+[lib]
+name = "pforth"
+path = "src/lib.rs"
