@@ -97,6 +97,52 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         })?;
         Ok(())
     }
+
+    pub fn cr(&mut self) -> Result<(), ForthError> {
+        self.output.write_all(b"\n").map_err(|e| ForthError {
+            message: e.to_string(),
+        })?;
+        Ok(())
+    }
+
+    pub fn space(&mut self) -> Result<(), ForthError> {
+        self.output.write_all(b" ").map_err(|e| ForthError {
+            message: e.to_string(),
+        })?;
+        Ok(())
+    }
+
+    pub fn spaces(&mut self) -> Result<(), ForthError> {
+        let n = self.ds_pop()?;
+        if n > 0 {
+            for _ in 0..n {
+                self.space()?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn type_word(&mut self) -> Result<(), ForthError> {
+        let len = self.ds_pop()?;
+        let addr = self.ds_pop()? as u16 as usize;
+        if len > 0 {
+            for i in 0..len as usize {
+                let a = addr + i;
+                if a <= 65535 {
+                    let b = self.memory[a];
+                    self.output.write_all(&[b]).map_err(|e| ForthError {
+                        message: e.to_string(),
+                    })?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn bye(&mut self) -> Result<(), ForthError> {
+        self.running = false;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -122,5 +168,33 @@ mod tests {
             assert_eq!(f.ds.pop(), Some(0));
         }
         assert_eq!(output, b"X");
+    }
+
+    #[test]
+    fn cr_space_spaces_type_bye() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        {
+            let mut f = Forth::new(input, &mut output);
+            assert!(f.running);
+
+            f.cr().unwrap();
+            f.space().unwrap();
+            f.ds_push(3);
+            f.spaces().unwrap();
+
+            let hello = b"HELLO";
+            for (i, b) in hello.iter().enumerate() {
+                f.memory[1024 + i] = *b;
+            }
+            f.ds_push(1024);
+            f.ds_push(5);
+            f.type_word().unwrap();
+            assert!(f.ds.is_empty());
+
+            f.bye().unwrap();
+            assert!(!f.running);
+        }
+        assert_eq!(output, b"\n    HELLO");
     }
 }
