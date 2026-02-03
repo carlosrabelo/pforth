@@ -143,6 +143,55 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.running = false;
         Ok(())
     }
+
+    pub fn read_line(&mut self) -> Result<Option<String>, ForthError> {
+        let mut line = String::new();
+        match self.input.read_line(&mut line) {
+            Ok(0) => {
+                self.running = false;
+                Ok(None)
+            }
+            Ok(_) => {
+                if line.ends_with('\n') {
+                    line.pop();
+                }
+                if line.ends_with('\r') {
+                    line.pop();
+                }
+                Ok(Some(line))
+            }
+            Err(e) => Err(ForthError {
+                message: e.to_string(),
+            }),
+        }
+    }
+
+    pub fn expect(&mut self) -> Result<(), ForthError> {
+        let maxlen = self.ds_pop()?;
+        let addr = self.ds_pop()? as u16 as usize;
+        let line: String = self.read_line()?.unwrap_or_default();
+        let mut count = line.len();
+        if maxlen > 0 && count > maxlen as usize {
+            count = maxlen as usize;
+        }
+        for (i, b) in line.as_bytes().iter().enumerate().take(count) {
+            let a = addr + i;
+            if a <= 65535 {
+                self.memory[a] = *b;
+            }
+        }
+        let after = addr + count;
+        if after <= 65535 {
+            self.memory[after] = 0;
+        }
+        self.store_cell_unchecked(SPAN_ADDR, count as Cell);
+        Ok(())
+    }
+
+    pub fn span(&mut self) -> Result<(), ForthError> {
+        self.ds_push(SPAN_ADDR as Cell);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -196,5 +245,39 @@ mod tests {
             assert!(!f.running);
         }
         assert_eq!(output, b"\n    HELLO");
+    }
+
+    fn fetch_cell(mem: &[u8; 65536], addr: usize) -> Cell {
+        let lo = mem[addr] as u16;
+        let hi = mem[addr + 1] as u16;
+        (lo | (hi << 8)) as Cell
+    }
+
+    #[test]
+    fn expect_stores_line_and_span() {
+        let input = Cursor::new(b"TEST LINE\n".to_vec());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+        f.ds_push(2000);
+        f.ds_push(80);
+        f.expect().unwrap();
+        assert_eq!(&f.memory[2000..2009], b"TEST LINE");
+        assert_eq!(f.memory[2009], 0);
+        f.span().unwrap();
+        assert_eq!(f.ds_pop().unwrap(), SPAN_ADDR as Cell);
+        assert_eq!(fetch_cell(&f.memory, SPAN_ADDR), 9);
+    }
+
+    #[test]
+    fn expect_truncates_to_maxlen() {
+        let input = Cursor::new(b"A VERY LONG STRING\n".to_vec());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+        f.ds_push(2000);
+        f.ds_push(5);
+        f.expect().unwrap();
+        assert_eq!(&f.memory[2000..2005], b"A VER");
+        assert_eq!(f.memory[2005], 0);
+        assert_eq!(fetch_cell(&f.memory, SPAN_ADDR), 5);
     }
 }
