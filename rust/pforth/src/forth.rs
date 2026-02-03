@@ -29,6 +29,8 @@ pub struct Forth<R: BufRead, W: Write> {
     pub interrupted: bool,
     pub tib: String,
     pub in_ptr: usize,
+    pub compile_list: Vec<Cell>,
+    pub compiling_xt: isize,
     pub input: R,
     pub output: W,
 }
@@ -44,6 +46,8 @@ impl<R: BufRead, W: Write> Forth<R, W> {
             interrupted: false,
             tib: String::new(),
             in_ptr: 0,
+            compile_list: Vec::new(),
+            compiling_xt: -1,
             input,
             output,
         };
@@ -192,6 +196,108 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.ds_push(SPAN_ADDR as Cell);
         Ok(())
     }
+
+    pub fn abort(&mut self) {
+        self.ds.clear();
+        self.rs.clear();
+        self.compile_list.clear();
+        self.compiling_xt = -1;
+        self.state = false;
+        self.in_ptr = self.tib.len();
+    }
+
+    pub fn check_interrupt(&mut self) -> Result<(), ForthError> {
+        if !self.interrupted {
+            return Ok(());
+        }
+        self.interrupted = false;
+        self.abort();
+        Err(ForthError {
+            message: "INTERRUPTED".to_string(),
+        })
+    }
+
+    pub fn interpret_line(&mut self, line: &str) -> Result<(), ForthError> {
+        self.tib = line.to_string();
+        self.in_ptr = 0;
+        // Outer interpreter is filled in a later spec.
+        Ok(())
+    }
+
+    pub fn repl_step(&mut self) -> Result<(), ForthError> {
+        if !self.state {
+            self.output.write_all(b" ok\n").map_err(|e| ForthError {
+                message: e.to_string(),
+            })?;
+        }
+        let line = match self.read_line()? {
+            None => return Ok(()),
+            Some(s) => s,
+        };
+        if let Err(e) = self
+            .check_interrupt()
+            .and_then(|_| self.interpret_line(&line))
+        {
+            let _ = self.output.write_all(b"\n");
+            let _ = writeln!(self.output, "{}", e.message);
+            self.abort();
+        }
+        Ok(())
+    }
+
+    pub fn quit(&mut self) -> Result<(), ForthError> {
+        self.running = true;
+        self.abort();
+        let flag = install_sigint_flag();
+        while self.running {
+            if flag.load(std::sync::atomic::Ordering::SeqCst) {
+                self.interrupted = true;
+                flag.store(false, std::sync::atomic::Ordering::SeqCst);
+            }
+            self.repl_step()?;
+        }
+        remove_sigint_flag();
+        Ok(())
+    }
+}
+
+static SIGINT_FLAG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static SIGINT_INSTALLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn install_sigint_flag() -> &'static std::sync::atomic::AtomicBool {
+    #[cfg(unix)]
+    {
+        if !SIGINT_INSTALLED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            unsafe extern "C" {
+                fn signal(sig: i32, handler: usize) -> usize;
+            }
+            const SIGINT: i32 = 2;
+            unsafe extern "C" fn handle_sigint(_: i32) {
+                SIGINT_FLAG.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+            unsafe {
+                signal(SIGINT, handle_sigint as *const () as usize);
+            }
+        }
+    }
+    &SIGINT_FLAG
+}
+
+fn remove_sigint_flag() {
+    #[cfg(unix)]
+    {
+        if SIGINT_INSTALLED.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            unsafe extern "C" {
+                fn signal(sig: i32, handler: usize) -> usize;
+            }
+            const SIGINT: i32 = 2;
+            const SIG_DFL: usize = 0;
+            unsafe {
+                signal(SIGINT, SIG_DFL);
+            }
+        }
+    }
+    SIGINT_FLAG.store(false, std::sync::atomic::Ordering::SeqCst);
 }
 
 #[cfg(test)]
@@ -279,5 +385,33 @@ mod tests {
         assert_eq!(&f.memory[2000..2005], b"A VER");
         assert_eq!(f.memory[2005], 0);
         assert_eq!(fetch_cell(&f.memory, SPAN_ADDR), 5);
+    }
+
+    #[test]
+    fn repl_prints_ok_and_stops_on_eof() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        {
+            let mut f = Forth::new(input, &mut output);
+            assert_eq!(fetch_cell(&f.memory, DP_ADDR), INITIAL_DP);
+            assert_eq!(fetch_cell(&f.memory, BASE_ADDR), 10);
+            f.quit().unwrap();
+            assert!(!f.running);
+        }
+        assert_eq!(output, b" ok\n");
+    }
+
+    #[test]
+    fn interrupt_clears_both_stacks() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+        f.ds_push(1);
+        f.rs.push(2);
+        f.interrupted = true;
+        let err = f.check_interrupt().unwrap_err();
+        assert_eq!(err.message, "INTERRUPTED");
+        assert!(f.ds.is_empty());
+        assert!(f.rs.is_empty());
     }
 }
