@@ -73,28 +73,56 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         // Module loading grows in later tasks.
     }
 
-    pub fn ds_push(&mut self, v: Cell) {
+    pub fn push_ds(&mut self, v: Cell) {
         self.ds.push(v);
     }
 
-    pub fn ds_pop(&mut self) -> Result<Cell, ForthError> {
+    pub fn pop_ds(&mut self) -> Result<Cell, ForthError> {
         self.ds.pop().ok_or_else(|| ForthError {
             message: "DATA STACK UNDERFLOW".to_string(),
         })
     }
 
+    pub fn peek_ds(&self) -> Result<Cell, ForthError> {
+        self.ds.last().copied().ok_or_else(|| ForthError {
+            message: "DATA STACK UNDERFLOW".to_string(),
+        })
+    }
+
+    pub fn push_rs(&mut self, v: Cell) {
+        self.rs.push(v);
+    }
+
+    pub fn pop_rs(&mut self) -> Result<Cell, ForthError> {
+        self.rs.pop().ok_or_else(|| ForthError {
+            message: "RETURN STACK UNDERFLOW".to_string(),
+        })
+    }
+
+    pub fn peek_rs(&self) -> Result<Cell, ForthError> {
+        self.rs.last().copied().ok_or_else(|| ForthError {
+            message: "RETURN STACK UNDERFLOW".to_string(),
+        })
+    }
+
+    pub fn depth(&mut self) -> Result<(), ForthError> {
+        let n = self.ds.len() as Cell;
+        self.push_ds(n);
+        Ok(())
+    }
+
     pub fn key(&mut self) -> Result<(), ForthError> {
         let mut buf = [0u8; 1];
         match std::io::Read::read(&mut self.input, &mut buf) {
-            Ok(0) => self.ds_push(0),
-            Ok(_) => self.ds_push(buf[0] as Cell),
-            Err(_) => self.ds_push(0),
+            Ok(0) => self.push_ds(0),
+            Ok(_) => self.push_ds(buf[0] as Cell),
+            Err(_) => self.push_ds(0),
         }
         Ok(())
     }
 
     pub fn emit(&mut self) -> Result<(), ForthError> {
-        let v = self.ds_pop()?;
+        let v = self.pop_ds()?;
         let b = (v as u16 & 0xff) as u8;
         self.output.write_all(&[b]).map_err(|e| ForthError {
             message: e.to_string(),
@@ -117,7 +145,7 @@ impl<R: BufRead, W: Write> Forth<R, W> {
     }
 
     pub fn spaces(&mut self) -> Result<(), ForthError> {
-        let n = self.ds_pop()?;
+        let n = self.pop_ds()?;
         if n > 0 {
             for _ in 0..n {
                 self.space()?;
@@ -127,8 +155,8 @@ impl<R: BufRead, W: Write> Forth<R, W> {
     }
 
     pub fn type_word(&mut self) -> Result<(), ForthError> {
-        let len = self.ds_pop()?;
-        let addr = self.ds_pop()? as u16 as usize;
+        let len = self.pop_ds()?;
+        let addr = self.pop_ds()? as u16 as usize;
         if len > 0 {
             for i in 0..len as usize {
                 let a = addr + i;
@@ -171,8 +199,8 @@ impl<R: BufRead, W: Write> Forth<R, W> {
     }
 
     pub fn expect(&mut self) -> Result<(), ForthError> {
-        let maxlen = self.ds_pop()?;
-        let addr = self.ds_pop()? as u16 as usize;
+        let maxlen = self.pop_ds()?;
+        let addr = self.pop_ds()? as u16 as usize;
         let line: String = self.read_line()?.unwrap_or_default();
         let mut count = line.len();
         if maxlen > 0 && count > maxlen as usize {
@@ -193,7 +221,7 @@ impl<R: BufRead, W: Write> Forth<R, W> {
     }
 
     pub fn span(&mut self) -> Result<(), ForthError> {
-        self.ds_push(SPAN_ADDR as Cell);
+        self.push_ds(SPAN_ADDR as Cell);
         Ok(())
     }
 
@@ -335,15 +363,15 @@ mod tests {
 
             f.cr().unwrap();
             f.space().unwrap();
-            f.ds_push(3);
+            f.push_ds(3);
             f.spaces().unwrap();
 
             let hello = b"HELLO";
             for (i, b) in hello.iter().enumerate() {
                 f.memory[1024 + i] = *b;
             }
-            f.ds_push(1024);
-            f.ds_push(5);
+            f.push_ds(1024);
+            f.push_ds(5);
             f.type_word().unwrap();
             assert!(f.ds.is_empty());
 
@@ -364,13 +392,13 @@ mod tests {
         let input = Cursor::new(b"TEST LINE\n".to_vec());
         let mut output = Vec::new();
         let mut f = Forth::new(input, &mut output);
-        f.ds_push(2000);
-        f.ds_push(80);
+        f.push_ds(2000);
+        f.push_ds(80);
         f.expect().unwrap();
         assert_eq!(&f.memory[2000..2009], b"TEST LINE");
         assert_eq!(f.memory[2009], 0);
         f.span().unwrap();
-        assert_eq!(f.ds_pop().unwrap(), SPAN_ADDR as Cell);
+        assert_eq!(f.pop_ds().unwrap(), SPAN_ADDR as Cell);
         assert_eq!(fetch_cell(&f.memory, SPAN_ADDR), 9);
     }
 
@@ -379,8 +407,8 @@ mod tests {
         let input = Cursor::new(b"A VERY LONG STRING\n".to_vec());
         let mut output = Vec::new();
         let mut f = Forth::new(input, &mut output);
-        f.ds_push(2000);
-        f.ds_push(5);
+        f.push_ds(2000);
+        f.push_ds(5);
         f.expect().unwrap();
         assert_eq!(&f.memory[2000..2005], b"A VER");
         assert_eq!(f.memory[2005], 0);
@@ -406,12 +434,46 @@ mod tests {
         let input = Cursor::new(Vec::new());
         let mut output = Vec::new();
         let mut f = Forth::new(input, &mut output);
-        f.ds_push(1);
+        f.push_ds(1);
         f.rs.push(2);
         f.interrupted = true;
         let err = f.check_interrupt().unwrap_err();
         assert_eq!(err.message, "INTERRUPTED");
         assert!(f.ds.is_empty());
         assert!(f.rs.is_empty());
+    }
+
+    #[test]
+    fn stacks_push_pop_peek_and_underflow() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+        f.push_ds(10);
+        f.push_ds(20);
+        assert_eq!(f.peek_ds().unwrap(), 20);
+        assert_eq!(f.pop_ds().unwrap(), 20);
+        assert_eq!(f.pop_ds().unwrap(), 10);
+        assert_eq!(f.pop_ds().unwrap_err().message, "DATA STACK UNDERFLOW");
+        assert_eq!(f.peek_ds().unwrap_err().message, "DATA STACK UNDERFLOW");
+
+        f.push_rs(3);
+        assert_eq!(f.peek_rs().unwrap(), 3);
+        assert_eq!(f.pop_rs().unwrap(), 3);
+        assert_eq!(f.pop_rs().unwrap_err().message, "RETURN STACK UNDERFLOW");
+        assert_eq!(f.peek_rs().unwrap_err().message, "RETURN STACK UNDERFLOW");
+    }
+
+    #[test]
+    fn depth_pushes_count_before_push() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+        f.depth().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 0);
+        f.push_ds(7);
+        f.push_ds(8);
+        f.depth().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 2);
+        assert_eq!(f.ds, vec![7, 8]);
     }
 }
