@@ -147,6 +147,39 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         Ok(())
     }
 
+    pub fn word_fetch(&mut self) -> Result<(), ForthError> {
+        let addr = self.pop_ds()? as u16 as u32;
+        let v = self.fetch_cell(addr)?;
+        self.push_ds(v);
+        Ok(())
+    }
+
+    pub fn word_store(&mut self) -> Result<(), ForthError> {
+        let addr = self.pop_ds()? as u16 as u32;
+        let n = self.pop_ds()?;
+        self.store_cell(addr, n)
+    }
+
+    pub fn word_c_fetch(&mut self) -> Result<(), ForthError> {
+        let addr = self.pop_ds()? as u16 as u32;
+        let b = self.c_fetch(addr)?;
+        self.push_ds(b as Cell);
+        Ok(())
+    }
+
+    pub fn word_c_store(&mut self) -> Result<(), ForthError> {
+        let addr = self.pop_ds()? as u16 as u32;
+        let n = self.pop_ds()?;
+        self.c_store(addr, (n as u16 & 0xff) as u8)
+    }
+
+    pub fn plus_store(&mut self) -> Result<(), ForthError> {
+        let addr = self.pop_ds()? as u16 as u32;
+        let n = self.pop_ds()?;
+        let cur = self.fetch_cell(addr)?;
+        self.store_cell(addr, cur.wrapping_add(n))
+    }
+
     pub fn key(&mut self) -> Result<(), ForthError> {
         let mut buf = [0u8; 1];
         match std::io::Read::read(&mut self.input, &mut buf) {
@@ -547,5 +580,60 @@ mod tests {
             f.store_cell(65535, 10).unwrap_err().message,
             "OUT OF MEMORY RANGE"
         );
+    }
+
+    #[test]
+    fn fetch_store_and_plus_store() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        f.push_ds(12345);
+        f.push_ds(4000);
+        f.word_store().unwrap();
+        assert!(f.ds.is_empty());
+        assert_eq!(f.fetch_cell(4000).unwrap(), 12345);
+
+        f.push_ds(4000);
+        f.word_fetch().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 12345);
+
+        assert_eq!(f.word_fetch().unwrap_err().message, "DATA STACK UNDERFLOW");
+        f.push_ds(100);
+        assert_eq!(f.word_store().unwrap_err().message, "DATA STACK UNDERFLOW");
+
+        f.push_ds(0x42);
+        f.push_ds(5000);
+        f.word_c_store().unwrap();
+        assert!(f.ds.is_empty());
+        assert_eq!(f.c_fetch(5000).unwrap(), 0x42);
+
+        f.push_ds(5000);
+        f.word_c_fetch().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 0x42);
+
+        assert_eq!(
+            f.word_c_fetch().unwrap_err().message,
+            "DATA STACK UNDERFLOW"
+        );
+        f.push_ds(100);
+        assert_eq!(
+            f.word_c_store().unwrap_err().message,
+            "DATA STACK UNDERFLOW"
+        );
+
+        f.push_ds(10);
+        f.push_ds(6000);
+        f.word_store().unwrap();
+        f.push_ds(25);
+        f.push_ds(6000);
+        f.plus_store().unwrap();
+        assert!(f.ds.is_empty());
+        assert_eq!(f.fetch_cell(6000).unwrap(), 35);
+
+        f.push_ds(-5);
+        f.push_ds(6000);
+        f.plus_store().unwrap();
+        assert_eq!(f.fetch_cell(6000).unwrap(), 30);
     }
 }
