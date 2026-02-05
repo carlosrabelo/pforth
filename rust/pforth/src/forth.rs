@@ -51,18 +51,54 @@ impl<R: BufRead, W: Write> Forth<R, W> {
             input,
             output,
         };
-        f.store_cell_unchecked(SPAN_ADDR, 0);
-        f.store_cell_unchecked(DP_ADDR, INITIAL_DP);
-        f.store_cell_unchecked(BASE_ADDR, 10);
+        f.store_cell(SPAN_ADDR as u32, 0).unwrap();
+        f.store_cell(DP_ADDR as u32, INITIAL_DP).unwrap();
+        f.store_cell(BASE_ADDR as u32, 10).unwrap();
         f.init_primitives();
         f.require_module("CORE");
         f
     }
 
-    fn store_cell_unchecked(&mut self, addr: usize, val: Cell) {
+    pub fn c_fetch(&self, addr: u32) -> Result<u8, ForthError> {
+        if addr > 65535 {
+            return Err(ForthError {
+                message: "OUT OF MEMORY RANGE".to_string(),
+            });
+        }
+        Ok(self.memory[addr as usize])
+    }
+
+    pub fn c_store(&mut self, addr: u32, val: u8) -> Result<(), ForthError> {
+        if addr > 65535 {
+            return Err(ForthError {
+                message: "OUT OF MEMORY RANGE".to_string(),
+            });
+        }
+        self.memory[addr as usize] = val;
+        Ok(())
+    }
+
+    pub fn fetch_cell(&self, addr: u32) -> Result<Cell, ForthError> {
+        if addr + 1 > 65535 {
+            return Err(ForthError {
+                message: "OUT OF MEMORY RANGE".to_string(),
+            });
+        }
+        let low = self.memory[addr as usize] as u16;
+        let high = self.memory[addr as usize + 1] as u16;
+        Ok((low | (high << 8)) as Cell)
+    }
+
+    pub fn store_cell(&mut self, addr: u32, val: Cell) -> Result<(), ForthError> {
+        if addr + 1 > 65535 {
+            return Err(ForthError {
+                message: "OUT OF MEMORY RANGE".to_string(),
+            });
+        }
         let u = val as u16;
-        self.memory[addr] = (u & 0xff) as u8;
-        self.memory[addr + 1] = (u >> 8) as u8;
+        self.memory[addr as usize] = (u & 0xff) as u8;
+        self.memory[addr as usize + 1] = ((u >> 8) & 0xff) as u8;
+        Ok(())
     }
 
     fn init_primitives(&mut self) {
@@ -216,7 +252,7 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         if after <= 65535 {
             self.memory[after] = 0;
         }
-        self.store_cell_unchecked(SPAN_ADDR, count as Cell);
+        self.store_cell(SPAN_ADDR as u32, count as Cell)?;
         Ok(())
     }
 
@@ -475,5 +511,41 @@ mod tests {
         f.depth().unwrap();
         assert_eq!(f.pop_ds().unwrap(), 2);
         assert_eq!(f.ds, vec![7, 8]);
+    }
+
+    #[test]
+    fn memory_little_endian_and_bounds() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        f.c_store(0, 0xAB).unwrap();
+        assert_eq!(f.c_fetch(0).unwrap(), 0xAB);
+        f.c_store(65535, 0xFE).unwrap();
+        assert_eq!(f.c_fetch(65535).unwrap(), 0xFE);
+        assert_eq!(f.c_fetch(65536).unwrap_err().message, "OUT OF MEMORY RANGE");
+        assert_eq!(
+            f.c_store(65536, 1).unwrap_err().message,
+            "OUT OF MEMORY RANGE"
+        );
+
+        f.store_cell(1024, 0x1234).unwrap();
+        assert_eq!(f.c_fetch(1024).unwrap(), 0x34);
+        assert_eq!(f.c_fetch(1025).unwrap(), 0x12);
+        assert_eq!(f.fetch_cell(1024).unwrap(), 0x1234);
+
+        f.store_cell(2048, -1).unwrap();
+        assert_eq!(f.c_fetch(2048).unwrap(), 0xFF);
+        assert_eq!(f.c_fetch(2049).unwrap(), 0xFF);
+        assert_eq!(f.fetch_cell(2048).unwrap(), -1);
+
+        assert_eq!(
+            f.fetch_cell(65535).unwrap_err().message,
+            "OUT OF MEMORY RANGE"
+        );
+        assert_eq!(
+            f.store_cell(65535, 10).unwrap_err().message,
+            "OUT OF MEMORY RANGE"
+        );
     }
 }
