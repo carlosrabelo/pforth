@@ -180,6 +180,60 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.store_cell(addr, cur.wrapping_add(n))
     }
 
+    pub fn fill(&mut self) -> Result<(), ForthError> {
+        let byte = self.pop_ds()?;
+        let len = self.pop_ds()?;
+        let addr = self.pop_ds()? as u16 as u32;
+        let b = (byte as u16 & 0xff) as u8;
+        if len <= 0 {
+            return Ok(());
+        }
+        for i in 0..len as u32 {
+            self.c_store(addr + i, b)?;
+        }
+        Ok(())
+    }
+
+    pub fn erase(&mut self) -> Result<(), ForthError> {
+        let len = self.pop_ds()?;
+        let addr = self.pop_ds()? as u16 as u32;
+        if len <= 0 {
+            return Ok(());
+        }
+        for i in 0..len as u32 {
+            self.c_store(addr + i, 0)?;
+        }
+        Ok(())
+    }
+
+    pub fn cmove(&mut self) -> Result<(), ForthError> {
+        let len = self.pop_ds()?;
+        let src = self.pop_ds()? as u16 as u32;
+        let dest = self.pop_ds()? as u16 as u32;
+        if len <= 0 {
+            return Ok(());
+        }
+        for i in 0..len as u32 {
+            let b = self.c_fetch(src + i)?;
+            self.c_store(dest + i, b)?;
+        }
+        Ok(())
+    }
+
+    pub fn cmove_up(&mut self) -> Result<(), ForthError> {
+        let len = self.pop_ds()?;
+        let src = self.pop_ds()? as u16 as u32;
+        let dest = self.pop_ds()? as u16 as u32;
+        if len <= 0 {
+            return Ok(());
+        }
+        for i in (0..len as u32).rev() {
+            let b = self.c_fetch(src + i)?;
+            self.c_store(dest + i, b)?;
+        }
+        Ok(())
+    }
+
     pub fn key(&mut self) -> Result<(), ForthError> {
         let mut buf = [0u8; 1];
         match std::io::Read::read(&mut self.input, &mut buf) {
@@ -635,5 +689,68 @@ mod tests {
         f.push_ds(6000);
         f.plus_store().unwrap();
         assert_eq!(f.fetch_cell(6000).unwrap(), 30);
+    }
+
+    #[test]
+    fn fill_erase_cmove() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        f.push_ds(8000);
+        f.push_ds(10);
+        f.push_ds(0xEE);
+        f.fill().unwrap();
+        assert!(f.ds.is_empty());
+        for i in 0..10 {
+            assert_eq!(f.c_fetch(8000 + i).unwrap(), 0xEE);
+        }
+
+        f.push_ds(8000);
+        f.push_ds(5);
+        f.erase().unwrap();
+        assert!(f.ds.is_empty());
+        for i in 0..5 {
+            assert_eq!(f.c_fetch(8000 + i).unwrap(), 0);
+        }
+        for i in 5..10 {
+            assert_eq!(f.c_fetch(8000 + i).unwrap(), 0xEE);
+        }
+
+        for i in 0..5 {
+            f.c_store(9000 + i, (i + 10) as u8).unwrap();
+        }
+        f.push_ds(9010);
+        f.push_ds(9000);
+        f.push_ds(5);
+        f.cmove().unwrap();
+        assert!(f.ds.is_empty());
+        for i in 0..5 {
+            assert_eq!(f.c_fetch(9010 + i).unwrap(), (i + 10) as u8);
+        }
+
+        for i in 0..5 {
+            f.c_store(9020 + i, (i + 20) as u8).unwrap();
+        }
+        f.push_ds(9021);
+        f.push_ds(9020);
+        f.push_ds(4);
+        f.cmove().unwrap();
+        assert_eq!(f.c_fetch(9021).unwrap(), 20);
+        assert_eq!(f.c_fetch(9022).unwrap(), 20);
+        assert_eq!(f.c_fetch(9023).unwrap(), 20);
+        assert_eq!(f.c_fetch(9024).unwrap(), 20);
+
+        for i in 0..5 {
+            f.c_store(9030 + i, (i + 30) as u8).unwrap();
+        }
+        f.push_ds(9031);
+        f.push_ds(9030);
+        f.push_ds(4);
+        f.cmove_up().unwrap();
+        assert_eq!(f.c_fetch(9031).unwrap(), 30);
+        assert_eq!(f.c_fetch(9032).unwrap(), 31);
+        assert_eq!(f.c_fetch(9033).unwrap(), 32);
+        assert_eq!(f.c_fetch(9034).unwrap(), 33);
     }
 }
