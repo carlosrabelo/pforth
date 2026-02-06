@@ -262,6 +262,50 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         Ok(())
     }
 
+    pub fn qdup(&mut self) -> Result<(), ForthError> {
+        let v = self.peek_ds()?;
+        if v != 0 {
+            self.push_ds(v);
+        }
+        Ok(())
+    }
+
+    pub fn rot(&mut self) -> Result<(), ForthError> {
+        let c = self.pop_ds()?;
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(b);
+        self.push_ds(c);
+        self.push_ds(a);
+        Ok(())
+    }
+
+    pub fn nrot(&mut self) -> Result<(), ForthError> {
+        let c = self.pop_ds()?;
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(c);
+        self.push_ds(a);
+        self.push_ds(b);
+        Ok(())
+    }
+
+    pub fn nip(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        self.pop_ds()?;
+        self.push_ds(b);
+        Ok(())
+    }
+
+    pub fn tuck(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(b);
+        self.push_ds(a);
+        self.push_ds(b);
+        Ok(())
+    }
+
     pub fn key(&mut self) -> Result<(), ForthError> {
         let mut buf = [0u8; 1];
         match std::io::Read::read(&mut self.input, &mut buf) {
@@ -817,5 +861,61 @@ mod tests {
         f.ds.clear();
         f.push_ds(1);
         assert_eq!(f.over().unwrap_err().message, "DATA STACK UNDERFLOW");
+    }
+
+    #[test]
+    fn extended_stack_words() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        f.push_ds(123);
+        f.qdup().unwrap();
+        assert_eq!(f.ds, vec![123, 123]);
+        f.ds.clear();
+        f.push_ds(0);
+        f.qdup().unwrap();
+        assert_eq!(f.ds, vec![0]);
+        f.ds.clear();
+        assert_eq!(f.qdup().unwrap_err().message, "DATA STACK UNDERFLOW");
+
+        f.push_ds(10);
+        f.push_ds(20);
+        f.push_ds(30);
+        f.rot().unwrap();
+        assert_eq!(f.ds, vec![20, 30, 10]);
+        f.ds.clear();
+        f.push_ds(1);
+        f.push_ds(2);
+        assert_eq!(f.rot().unwrap_err().message, "DATA STACK UNDERFLOW");
+
+        f.ds.clear();
+        f.push_ds(10);
+        f.push_ds(20);
+        f.push_ds(30);
+        f.nrot().unwrap();
+        assert_eq!(f.ds, vec![30, 10, 20]);
+        f.ds.clear();
+        f.push_ds(1);
+        f.push_ds(2);
+        assert_eq!(f.nrot().unwrap_err().message, "DATA STACK UNDERFLOW");
+
+        f.ds.clear();
+        f.push_ds(11);
+        f.push_ds(22);
+        f.nip().unwrap();
+        assert_eq!(f.ds, vec![22]);
+        f.ds.clear();
+        f.push_ds(1);
+        assert_eq!(f.nip().unwrap_err().message, "DATA STACK UNDERFLOW");
+
+        f.ds.clear();
+        f.push_ds(11);
+        f.push_ds(22);
+        f.tuck().unwrap();
+        assert_eq!(f.ds, vec![22, 11, 22]);
+        f.ds.clear();
+        f.push_ds(1);
+        assert_eq!(f.tuck().unwrap_err().message, "DATA STACK UNDERFLOW");
     }
 }
