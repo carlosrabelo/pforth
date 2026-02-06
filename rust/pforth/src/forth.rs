@@ -234,6 +234,34 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         Ok(())
     }
 
+    pub fn dup(&mut self) -> Result<(), ForthError> {
+        let v = self.peek_ds()?;
+        self.push_ds(v);
+        Ok(())
+    }
+
+    pub fn drop(&mut self) -> Result<(), ForthError> {
+        self.pop_ds()?;
+        Ok(())
+    }
+
+    pub fn swap(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(b);
+        self.push_ds(a);
+        Ok(())
+    }
+
+    pub fn over(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(a);
+        self.push_ds(b);
+        self.push_ds(a);
+        Ok(())
+    }
+
     pub fn key(&mut self) -> Result<(), ForthError> {
         let mut buf = [0u8; 1];
         match std::io::Read::read(&mut self.input, &mut buf) {
@@ -752,5 +780,42 @@ mod tests {
         assert_eq!(f.c_fetch(9032).unwrap(), 31);
         assert_eq!(f.c_fetch(9033).unwrap(), 32);
         assert_eq!(f.c_fetch(9034).unwrap(), 33);
+    }
+
+    #[test]
+    fn basic_stack_words() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        f.push_ds(42);
+        f.dup().unwrap();
+        assert_eq!(f.ds, vec![42, 42]);
+        f.ds.clear();
+        assert_eq!(f.dup().unwrap_err().message, "DATA STACK UNDERFLOW");
+
+        f.push_ds(10);
+        f.push_ds(20);
+        f.drop().unwrap();
+        assert_eq!(f.ds, vec![10]);
+        f.drop().unwrap();
+        assert_eq!(f.drop().unwrap_err().message, "DATA STACK UNDERFLOW");
+
+        f.push_ds(1);
+        f.push_ds(2);
+        f.swap().unwrap();
+        assert_eq!(f.ds, vec![2, 1]);
+        f.ds.clear();
+        f.push_ds(1);
+        assert_eq!(f.swap().unwrap_err().message, "DATA STACK UNDERFLOW");
+
+        f.ds.clear();
+        f.push_ds(100);
+        f.push_ds(200);
+        f.over().unwrap();
+        assert_eq!(f.ds, vec![100, 200, 100]);
+        f.ds.clear();
+        f.push_ds(1);
+        assert_eq!(f.over().unwrap_err().message, "DATA STACK UNDERFLOW");
     }
 }
