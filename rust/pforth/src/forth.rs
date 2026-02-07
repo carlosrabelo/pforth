@@ -306,6 +306,48 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         Ok(())
     }
 
+    pub fn two_dup(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(a);
+        self.push_ds(b);
+        self.push_ds(a);
+        self.push_ds(b);
+        Ok(())
+    }
+
+    pub fn two_drop(&mut self) -> Result<(), ForthError> {
+        self.pop_ds()?;
+        self.pop_ds()?;
+        Ok(())
+    }
+
+    pub fn two_swap(&mut self) -> Result<(), ForthError> {
+        let d = self.pop_ds()?;
+        let c = self.pop_ds()?;
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(c);
+        self.push_ds(d);
+        self.push_ds(a);
+        self.push_ds(b);
+        Ok(())
+    }
+
+    pub fn two_over(&mut self) -> Result<(), ForthError> {
+        let d = self.pop_ds()?;
+        let c = self.pop_ds()?;
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(a);
+        self.push_ds(b);
+        self.push_ds(c);
+        self.push_ds(d);
+        self.push_ds(a);
+        self.push_ds(b);
+        Ok(())
+    }
+
     pub fn key(&mut self) -> Result<(), ForthError> {
         let mut buf = [0u8; 1];
         match std::io::Read::read(&mut self.input, &mut buf) {
@@ -917,5 +959,57 @@ mod tests {
         f.ds.clear();
         f.push_ds(1);
         assert_eq!(f.tuck().unwrap_err().message, "DATA STACK UNDERFLOW");
+    }
+
+    #[test]
+    fn double_stack_words() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        f.push_ds(10);
+        f.push_ds(20);
+        f.two_dup().unwrap();
+        assert_eq!(f.ds, vec![10, 20, 10, 20]);
+        f.ds.clear();
+        f.push_ds(1);
+        assert_eq!(f.two_dup().unwrap_err().message, "DATA STACK UNDERFLOW");
+
+        f.ds.clear();
+        f.push_ds(1);
+        f.push_ds(2);
+        f.push_ds(3);
+        f.push_ds(4);
+        f.two_drop().unwrap();
+        assert_eq!(f.ds, vec![1, 2]);
+        f.ds.clear();
+        f.push_ds(1);
+        assert_eq!(f.two_drop().unwrap_err().message, "DATA STACK UNDERFLOW");
+
+        f.ds.clear();
+        f.push_ds(1);
+        f.push_ds(2);
+        f.push_ds(3);
+        f.push_ds(4);
+        f.two_swap().unwrap();
+        assert_eq!(f.ds, vec![3, 4, 1, 2]);
+        f.ds.clear();
+        f.push_ds(1);
+        f.push_ds(2);
+        f.push_ds(3);
+        assert_eq!(f.two_swap().unwrap_err().message, "DATA STACK UNDERFLOW");
+
+        f.ds.clear();
+        f.push_ds(1);
+        f.push_ds(2);
+        f.push_ds(3);
+        f.push_ds(4);
+        f.two_over().unwrap();
+        assert_eq!(f.ds, vec![1, 2, 3, 4, 1, 2]);
+        f.ds.clear();
+        f.push_ds(1);
+        f.push_ds(2);
+        f.push_ds(3);
+        assert_eq!(f.two_over().unwrap_err().message, "DATA STACK UNDERFLOW");
     }
 }
