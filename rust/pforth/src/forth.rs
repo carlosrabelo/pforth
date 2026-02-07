@@ -348,6 +348,24 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         Ok(())
     }
 
+    pub fn to_r(&mut self) -> Result<(), ForthError> {
+        let v = self.pop_ds()?;
+        self.push_rs(v);
+        Ok(())
+    }
+
+    pub fn r_from(&mut self) -> Result<(), ForthError> {
+        let v = self.pop_rs()?;
+        self.push_ds(v);
+        Ok(())
+    }
+
+    pub fn r_fetch(&mut self) -> Result<(), ForthError> {
+        let v = self.peek_rs()?;
+        self.push_ds(v);
+        Ok(())
+    }
+
     pub fn key(&mut self) -> Result<(), ForthError> {
         let mut buf = [0u8; 1];
         match std::io::Read::read(&mut self.input, &mut buf) {
@@ -1011,5 +1029,29 @@ mod tests {
         f.push_ds(2);
         f.push_ds(3);
         assert_eq!(f.two_over().unwrap_err().message, "DATA STACK UNDERFLOW");
+    }
+
+    #[test]
+    fn return_stack_transfers() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        f.push_ds(777);
+        f.to_r().unwrap();
+        assert!(f.ds.is_empty());
+        assert_eq!(f.peek_rs().unwrap(), 777);
+
+        f.r_fetch().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 777);
+        assert_eq!(f.rs.len(), 1);
+
+        f.r_from().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 777);
+        assert!(f.rs.is_empty());
+
+        assert_eq!(f.to_r().unwrap_err().message, "DATA STACK UNDERFLOW");
+        assert_eq!(f.r_from().unwrap_err().message, "RETURN STACK UNDERFLOW");
+        assert_eq!(f.r_fetch().unwrap_err().message, "RETURN STACK UNDERFLOW");
     }
 }
