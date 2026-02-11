@@ -430,6 +430,62 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         Ok(())
     }
 
+    pub fn one_plus(&mut self) -> Result<(), ForthError> {
+        let n = self.pop_ds()?;
+        self.push_ds(n.wrapping_add(1));
+        Ok(())
+    }
+
+    pub fn one_minus(&mut self) -> Result<(), ForthError> {
+        let n = self.pop_ds()?;
+        self.push_ds(n.wrapping_sub(1));
+        Ok(())
+    }
+
+    pub fn two_plus(&mut self) -> Result<(), ForthError> {
+        let n = self.pop_ds()?;
+        self.push_ds(n.wrapping_add(2));
+        Ok(())
+    }
+
+    pub fn two_minus(&mut self) -> Result<(), ForthError> {
+        let n = self.pop_ds()?;
+        self.push_ds(n.wrapping_sub(2));
+        Ok(())
+    }
+
+    pub fn two_star(&mut self) -> Result<(), ForthError> {
+        let n = self.pop_ds()?;
+        self.push_ds(n.wrapping_shl(1));
+        Ok(())
+    }
+
+    pub fn two_slash(&mut self) -> Result<(), ForthError> {
+        let n = self.pop_ds()?;
+        self.push_ds(n.wrapping_shr(1));
+        Ok(())
+    }
+
+    pub fn abs(&mut self) -> Result<(), ForthError> {
+        let n = self.pop_ds()?;
+        self.push_ds(if n < 0 { n.wrapping_neg() } else { n });
+        Ok(())
+    }
+
+    pub fn min(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(if a < b { a } else { b });
+        Ok(())
+    }
+
+    pub fn max(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(if a > b { a } else { b });
+        Ok(())
+    }
+
     pub fn key(&mut self) -> Result<(), ForthError> {
         let mut buf = [0u8; 1];
         match std::io::Read::read(&mut self.input, &mut buf) {
@@ -1164,5 +1220,47 @@ mod tests {
         f.push_ds(5);
         f.negate().unwrap();
         assert_eq!(f.pop_ds().unwrap(), -5);
+    }
+
+    #[test]
+    fn scaling_abs_min_max() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        f.push_ds(5);
+        f.one_plus().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 6);
+        f.push_ds(5);
+        f.one_minus().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 4);
+        f.push_ds(5);
+        f.two_plus().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 7);
+        f.push_ds(5);
+        f.two_minus().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 3);
+        f.push_ds(5);
+        f.two_star().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 10);
+        f.push_ds(-8);
+        f.two_slash().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), -4);
+
+        f.push_ds(-7);
+        f.abs().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 7);
+        f.push_ds(7);
+        f.abs().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 7);
+
+        f.push_ds(3);
+        f.push_ds(8);
+        f.min().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 3);
+        f.push_ds(3);
+        f.push_ds(8);
+        f.max().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 8);
     }
 }
