@@ -366,6 +366,70 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         Ok(())
     }
 
+    pub fn plus(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(a.wrapping_add(b));
+        Ok(())
+    }
+
+    pub fn minus(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(a.wrapping_sub(b));
+        Ok(())
+    }
+
+    pub fn star(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(a.wrapping_mul(b));
+        Ok(())
+    }
+
+    pub fn slash_mod(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        if b == 0 {
+            return Err(ForthError {
+                message: "DIVISION BY ZERO".to_string(),
+            });
+        }
+        self.push_ds(a.wrapping_rem(b));
+        self.push_ds(a.wrapping_div(b));
+        Ok(())
+    }
+
+    pub fn slash(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        if b == 0 {
+            return Err(ForthError {
+                message: "DIVISION BY ZERO".to_string(),
+            });
+        }
+        self.push_ds(a.wrapping_div(b));
+        Ok(())
+    }
+
+    pub fn r#mod(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        if b == 0 {
+            return Err(ForthError {
+                message: "DIVISION BY ZERO".to_string(),
+            });
+        }
+        self.push_ds(a.wrapping_rem(b));
+        Ok(())
+    }
+
+    pub fn negate(&mut self) -> Result<(), ForthError> {
+        let n = self.pop_ds()?;
+        self.push_ds(n.wrapping_neg());
+        Ok(())
+    }
+
     pub fn key(&mut self) -> Result<(), ForthError> {
         let mut buf = [0u8; 1];
         match std::io::Read::read(&mut self.input, &mut buf) {
@@ -1053,5 +1117,52 @@ mod tests {
         assert_eq!(f.to_r().unwrap_err().message, "DATA STACK UNDERFLOW");
         assert_eq!(f.r_from().unwrap_err().message, "RETURN STACK UNDERFLOW");
         assert_eq!(f.r_fetch().unwrap_err().message, "RETURN STACK UNDERFLOW");
+    }
+
+    #[test]
+    fn arithmetic_and_division() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        f.push_ds(3);
+        f.push_ds(4);
+        f.plus().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 7);
+
+        f.push_ds(10);
+        f.push_ds(3);
+        f.minus().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 7);
+
+        f.push_ds(6);
+        f.push_ds(7);
+        f.star().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 42);
+
+        f.push_ds(14);
+        f.push_ds(3);
+        f.slash_mod().unwrap();
+        assert_eq!(f.ds, vec![2, 4]);
+        f.ds.clear();
+
+        f.push_ds(14);
+        f.push_ds(3);
+        f.slash().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 4);
+
+        f.push_ds(14);
+        f.push_ds(3);
+        f.r#mod().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 2);
+
+        f.push_ds(14);
+        f.push_ds(0);
+        assert_eq!(f.slash_mod().unwrap_err().message, "DIVISION BY ZERO");
+        assert!(f.ds.is_empty());
+
+        f.push_ds(5);
+        f.negate().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), -5);
     }
 }
