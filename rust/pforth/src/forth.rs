@@ -486,6 +486,33 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         Ok(())
     }
 
+    pub fn and(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(a & b);
+        Ok(())
+    }
+
+    pub fn or(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(a | b);
+        Ok(())
+    }
+
+    pub fn xor(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(a ^ b);
+        Ok(())
+    }
+
+    pub fn invert(&mut self) -> Result<(), ForthError> {
+        let n = self.pop_ds()?;
+        self.push_ds(!n);
+        Ok(())
+    }
+
     pub fn key(&mut self) -> Result<(), ForthError> {
         let mut buf = [0u8; 1];
         match std::io::Read::read(&mut self.input, &mut buf) {
@@ -1262,5 +1289,31 @@ mod tests {
         f.push_ds(8);
         f.max().unwrap();
         assert_eq!(f.pop_ds().unwrap(), 8);
+    }
+
+    #[test]
+    fn bitwise_logic() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        f.push_ds(0b1100);
+        f.push_ds(0b1010);
+        f.and().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 0b1000);
+
+        f.push_ds(0b1100);
+        f.push_ds(0b1010);
+        f.or().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 0b1110);
+
+        f.push_ds(0b1100);
+        f.push_ds(0b1010);
+        f.xor().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 0b0110);
+
+        f.push_ds(0);
+        f.invert().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), -1);
     }
 }
