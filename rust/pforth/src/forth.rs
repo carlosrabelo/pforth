@@ -513,6 +513,108 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         Ok(())
     }
 
+    fn flag(v: bool) -> Cell {
+        if v {
+            -1
+        } else {
+            0
+        }
+    }
+
+    pub fn equals(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(Self::flag(a == b));
+        Ok(())
+    }
+
+    pub fn not_equals(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(Self::flag(a != b));
+        Ok(())
+    }
+
+    pub fn less(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(Self::flag(a < b));
+        Ok(())
+    }
+
+    pub fn greater(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(Self::flag(a > b));
+        Ok(())
+    }
+
+    pub fn less_equal(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(Self::flag(a <= b));
+        Ok(())
+    }
+
+    pub fn greater_equal(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()?;
+        let a = self.pop_ds()?;
+        self.push_ds(Self::flag(a >= b));
+        Ok(())
+    }
+
+    pub fn zero_equals(&mut self) -> Result<(), ForthError> {
+        let n = self.pop_ds()?;
+        self.push_ds(Self::flag(n == 0));
+        Ok(())
+    }
+
+    pub fn zero_not_equals(&mut self) -> Result<(), ForthError> {
+        let n = self.pop_ds()?;
+        self.push_ds(Self::flag(n != 0));
+        Ok(())
+    }
+
+    pub fn zero_less(&mut self) -> Result<(), ForthError> {
+        let n = self.pop_ds()?;
+        self.push_ds(Self::flag(n < 0));
+        Ok(())
+    }
+
+    pub fn zero_greater(&mut self) -> Result<(), ForthError> {
+        let n = self.pop_ds()?;
+        self.push_ds(Self::flag(n > 0));
+        Ok(())
+    }
+
+    pub fn u_less(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()? as u16;
+        let a = self.pop_ds()? as u16;
+        self.push_ds(Self::flag(a < b));
+        Ok(())
+    }
+
+    pub fn u_greater(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()? as u16;
+        let a = self.pop_ds()? as u16;
+        self.push_ds(Self::flag(a > b));
+        Ok(())
+    }
+
+    pub fn u_less_equal(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()? as u16;
+        let a = self.pop_ds()? as u16;
+        self.push_ds(Self::flag(a <= b));
+        Ok(())
+    }
+
+    pub fn u_greater_equal(&mut self) -> Result<(), ForthError> {
+        let b = self.pop_ds()? as u16;
+        let a = self.pop_ds()? as u16;
+        self.push_ds(Self::flag(a >= b));
+        Ok(())
+    }
+
     pub fn key(&mut self) -> Result<(), ForthError> {
         let mut buf = [0u8; 1];
         match std::io::Read::read(&mut self.input, &mut buf) {
@@ -1314,6 +1416,75 @@ mod tests {
 
         f.push_ds(0);
         f.invert().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), -1);
+    }
+
+    #[test]
+    fn signed_zero_and_unsigned_comparisons() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        f.push_ds(42);
+        f.push_ds(42);
+        f.equals().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), -1);
+        f.push_ds(42);
+        f.push_ds(43);
+        f.equals().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 0);
+
+        f.push_ds(42);
+        f.push_ds(43);
+        f.not_equals().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), -1);
+
+        f.push_ds(-1);
+        f.push_ds(1);
+        f.less().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), -1);
+        f.push_ds(-1);
+        f.push_ds(1);
+        f.greater().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 0);
+
+        f.push_ds(5);
+        f.push_ds(5);
+        f.less_equal().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), -1);
+        f.push_ds(5);
+        f.push_ds(5);
+        f.greater_equal().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), -1);
+
+        f.push_ds(0);
+        f.zero_equals().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), -1);
+        f.push_ds(5);
+        f.zero_not_equals().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), -1);
+        f.push_ds(-10);
+        f.zero_less().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), -1);
+        f.push_ds(10);
+        f.zero_greater().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), -1);
+
+        f.push_ds(-1);
+        f.push_ds(1);
+        f.u_greater().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), -1);
+        f.push_ds(-1);
+        f.push_ds(1);
+        f.u_less().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 0);
+        f.push_ds(100);
+        f.push_ds(100);
+        f.u_less_equal().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), -1);
+        f.push_ds(100);
+        f.push_ds(100);
+        f.u_greater_equal().unwrap();
         assert_eq!(f.pop_ds().unwrap(), -1);
     }
 }
