@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::{BufRead, Write};
 
 pub type Cell = i16;
@@ -20,6 +21,26 @@ impl std::fmt::Display for ForthError {
 
 impl std::error::Error for ForthError {}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WordKind {
+    Primitive,
+    Colon,
+    Constant,
+    Variable,
+    Create,
+}
+
+pub type PrimFn<R, W> = fn(&mut Forth<R, W>) -> Result<(), ForthError>;
+
+pub struct Word<R: BufRead, W: Write> {
+    pub name: String,
+    pub immediate: bool,
+    pub kind: WordKind,
+    pub code: Option<PrimFn<R, W>>,
+    pub body: Vec<Cell>,
+    pub pfa: i32,
+}
+
 pub struct Forth<R: BufRead, W: Write> {
     pub ds: Vec<Cell>,
     pub rs: Vec<Cell>,
@@ -31,6 +52,9 @@ pub struct Forth<R: BufRead, W: Write> {
     pub in_ptr: usize,
     pub compile_list: Vec<Cell>,
     pub compiling_xt: isize,
+    pub words: Vec<Word<R, W>>,
+    pub words_by_name: HashMap<String, usize>,
+    pub latest: isize,
     pub input: R,
     pub output: W,
 }
@@ -48,6 +72,9 @@ impl<R: BufRead, W: Write> Forth<R, W> {
             in_ptr: 0,
             compile_list: Vec::new(),
             compiling_xt: -1,
+            words: Vec::new(),
+            words_by_name: HashMap::new(),
+            latest: -1,
             input,
             output,
         };
@@ -102,11 +129,126 @@ impl<R: BufRead, W: Write> Forth<R, W> {
     }
 
     fn init_primitives(&mut self) {
-        // Kernel registration grows in later tasks.
+        self.define_primitive("DUP", Self::dup);
+        self.define_primitive("OVER", Self::over);
     }
 
     fn require_module(&mut self, _name: &str) {
         // Module loading grows in later tasks.
+    }
+
+    fn uppercase_name(name: &str) -> String {
+        name.chars().map(|c| c.to_ascii_uppercase()).collect()
+    }
+
+    pub fn define_word(
+        &mut self,
+        name: &str,
+        kind: WordKind,
+        code: Option<PrimFn<R, W>>,
+        body: Vec<Cell>,
+        immediate: bool,
+    ) -> usize {
+        let upper = Self::uppercase_name(name);
+        let xt = self.words.len();
+        self.words.push(Word {
+            name: upper.clone(),
+            immediate,
+            kind,
+            code,
+            body,
+            pfa: 0,
+        });
+        self.words_by_name.insert(upper, xt);
+        self.latest = xt as isize;
+        xt
+    }
+
+    pub fn define_primitive(&mut self, name: &str, code: PrimFn<R, W>) -> usize {
+        self.define_word(name, WordKind::Primitive, Some(code), Vec::new(), false)
+    }
+
+    pub fn define_immediate(&mut self, name: &str, code: PrimFn<R, W>) -> usize {
+        self.define_word(name, WordKind::Primitive, Some(code), Vec::new(), true)
+    }
+
+    pub fn lookup(&self, name: &str) -> Option<usize> {
+        let upper = Self::uppercase_name(name);
+        self.words_by_name.get(&upper).copied()
+    }
+
+    pub fn find_xt(&self, name: &str) -> Option<usize> {
+        self.lookup(name)
+    }
+
+    pub fn parse_word(&mut self) -> Option<String> {
+        let bytes = self.tib.as_bytes();
+        while self.in_ptr < bytes.len() {
+            let b = bytes[self.in_ptr];
+            if b == b' ' || b == b'\t' || b == b'\r' || b == b'\n' {
+                self.in_ptr += 1;
+            } else {
+                break;
+            }
+        }
+        if self.in_ptr >= bytes.len() {
+            return None;
+        }
+        let start = self.in_ptr;
+        while self.in_ptr < bytes.len() {
+            let b = bytes[self.in_ptr];
+            if b == b' ' || b == b'\t' || b == b'\r' || b == b'\n' {
+                break;
+            }
+            self.in_ptr += 1;
+        }
+        Some(self.tib[start..self.in_ptr].to_string())
+    }
+
+    pub fn find(&mut self) -> Result<(), ForthError> {
+        let addr = self.pop_ds()? as u16 as u32;
+        let len = self.c_fetch(addr)? as usize;
+        let mut name = String::new();
+        for i in 0..len {
+            let ch = self.c_fetch(addr + 1 + i as u32)? as char;
+            name.push(ch.to_ascii_uppercase());
+        }
+        match self.lookup(&name) {
+            None => {
+                self.push_ds(addr as Cell);
+                self.push_ds(0);
+            }
+            Some(xt) => {
+                let imm = self.words[xt].immediate;
+                self.push_ds(xt as Cell);
+                self.push_ds(if imm { 1 } else { -1 });
+            }
+        }
+        Ok(())
+    }
+
+    pub fn tick(&mut self) -> Result<(), ForthError> {
+        let token = self.parse_word().ok_or_else(|| ForthError {
+            message: "WORD NAME EXPECTED".to_string(),
+        })?;
+        let xt = self.find_xt(&token).ok_or_else(|| ForthError {
+            message: format!("WORD NOT FOUND: {token}"),
+        })?;
+        self.push_ds(xt as Cell);
+        Ok(())
+    }
+
+    pub fn to_body(&mut self) -> Result<(), ForthError> {
+        let xt = self.pop_ds()?;
+        if xt >= 0 {
+            let idx = xt as usize;
+            if idx < self.words.len() && self.words[idx].pfa != 0 {
+                self.push_ds(self.words[idx].pfa as Cell);
+                return Ok(());
+            }
+        }
+        self.push_ds(xt.wrapping_add(2));
+        Ok(())
     }
 
     pub fn push_ds(&mut self, v: Cell) {
@@ -1486,5 +1628,73 @@ mod tests {
         f.push_ds(100);
         f.u_greater_equal().unwrap();
         assert_eq!(f.pop_ds().unwrap(), -1);
+    }
+
+    #[test]
+    fn dictionary_lookup_find_tick_and_to_body() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        assert!(f.lookup("DUP").is_some());
+        assert!(f.lookup("dup").is_some());
+        assert!(f.lookup("Dup").is_some());
+        assert!(f.lookup("NONEXISTENT").is_none());
+        let xt = f.find_xt("swap");
+        assert!(xt.is_none());
+        let over_xt = f.find_xt("over").unwrap();
+        assert_eq!(f.words[over_xt].name, "OVER");
+
+        f.c_store(3000, 3).unwrap();
+        f.c_store(3001, b'd').unwrap();
+        f.c_store(3002, b'u').unwrap();
+        f.c_store(3003, b'p').unwrap();
+        f.push_ds(3000);
+        f.find().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), -1);
+        assert_eq!(f.pop_ds().unwrap(), f.find_xt("DUP").unwrap() as Cell);
+
+        f.define_immediate("TESTIMM", |_f| Ok(()));
+        f.c_store(3010, 7).unwrap();
+        for (i, b) in b"TESTIMM".iter().enumerate() {
+            f.c_store(3011 + i as u32, *b).unwrap();
+        }
+        f.push_ds(3010);
+        f.find().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 1);
+        assert_eq!(f.pop_ds().unwrap(), f.find_xt("TESTIMM").unwrap() as Cell);
+
+        f.c_store(3020, 4).unwrap();
+        f.c_store(3021, b'N').unwrap();
+        f.c_store(3022, b'O').unwrap();
+        f.c_store(3023, b'P').unwrap();
+        f.c_store(3024, b'E').unwrap();
+        f.push_ds(3020);
+        f.find().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 0);
+        assert_eq!(f.pop_ds().unwrap(), 3020);
+
+        f.tib = "  over  ".to_string();
+        f.in_ptr = 0;
+        f.tick().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), f.find_xt("OVER").unwrap() as Cell);
+
+        f.tib = "missingword".to_string();
+        f.in_ptr = 0;
+        assert_eq!(f.tick().unwrap_err().message, "WORD NOT FOUND: missingword");
+
+        f.tib = "   ".to_string();
+        f.in_ptr = 0;
+        assert_eq!(f.tick().unwrap_err().message, "WORD NAME EXPECTED");
+
+        let var_xt = f.define_word("MYVAR", WordKind::Variable, None, Vec::new(), false);
+        f.words[var_xt].pfa = 5432;
+        f.push_ds(var_xt as Cell);
+        f.to_body().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 5432);
+
+        f.push_ds(9999);
+        f.to_body().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 10001);
     }
 }
