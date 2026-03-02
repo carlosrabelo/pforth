@@ -251,6 +251,49 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         Ok(())
     }
 
+    pub fn dp(&mut self) -> Result<(), ForthError> {
+        self.push_ds(DP_ADDR as Cell);
+        Ok(())
+    }
+
+    pub fn here(&mut self) -> Result<(), ForthError> {
+        let v = self.fetch_cell(DP_ADDR as u32)?;
+        self.push_ds(v);
+        Ok(())
+    }
+
+    pub fn here_value(&self) -> Result<Cell, ForthError> {
+        self.fetch_cell(DP_ADDR as u32)
+    }
+
+    pub fn pad(&mut self) -> Result<(), ForthError> {
+        let h = self.here_value()?;
+        self.push_ds(h.wrapping_add(68));
+        Ok(())
+    }
+
+    pub fn allot(&mut self) -> Result<(), ForthError> {
+        let n = self.pop_ds()?;
+        let cur = self.here_value()?;
+        self.store_cell(DP_ADDR as u32, cur.wrapping_add(n))
+    }
+
+    pub fn comma(&mut self) -> Result<(), ForthError> {
+        let n = self.pop_ds()?;
+        let addr = self.here_value()? as u16 as u32;
+        self.store_cell(addr, n)?;
+        self.push_ds(2);
+        self.allot()
+    }
+
+    pub fn c_comma(&mut self) -> Result<(), ForthError> {
+        let n = self.pop_ds()?;
+        let addr = self.here_value()? as u16 as u32;
+        self.c_store(addr, (n as u16 & 0xff) as u8)?;
+        self.push_ds(1);
+        self.allot()
+    }
+
     pub fn push_ds(&mut self, v: Cell) {
         self.ds.push(v);
     }
@@ -1696,5 +1739,36 @@ mod tests {
         f.push_ds(9999);
         f.to_body().unwrap();
         assert_eq!(f.pop_ds().unwrap(), 10001);
+    }
+
+    #[test]
+    fn here_allot_and_comma() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        f.dp().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), DP_ADDR as Cell);
+        f.here().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 1024);
+        f.pad().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 1024 + 68);
+
+        f.push_ds(10);
+        f.allot().unwrap();
+        f.here().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 1034);
+
+        f.push_ds(0x1234);
+        f.comma().unwrap();
+        f.here().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 1036);
+        assert_eq!(f.fetch_cell(1034).unwrap(), 0x1234);
+
+        f.push_ds(0xAB);
+        f.c_comma().unwrap();
+        f.here().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 1037);
+        assert_eq!(f.c_fetch(1036).unwrap(), 0xAB);
     }
 }
