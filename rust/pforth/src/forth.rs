@@ -354,6 +354,37 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         Ok(())
     }
 
+    pub fn create(&mut self) -> Result<(), ForthError> {
+        let token = self.parse_word().ok_or_else(|| ForthError {
+            message: "WORD NAME EXPECTED".to_string(),
+        })?;
+        let pfa = self.here_value()?;
+        let xt = self.define_word(&token, WordKind::Create, None, Vec::new(), false);
+        self.words[xt].pfa = pfa as i32;
+        Ok(())
+    }
+
+    pub fn constant(&mut self) -> Result<(), ForthError> {
+        let val = self.pop_ds()?;
+        let token = self.parse_word().ok_or_else(|| ForthError {
+            message: "WORD NAME EXPECTED".to_string(),
+        })?;
+        self.define_word(&token, WordKind::Constant, None, vec![val], false);
+        Ok(())
+    }
+
+    pub fn variable(&mut self) -> Result<(), ForthError> {
+        let token = self.parse_word().ok_or_else(|| ForthError {
+            message: "WORD NAME EXPECTED".to_string(),
+        })?;
+        let pfa = self.here_value()?;
+        let xt = self.define_word(&token, WordKind::Variable, None, Vec::new(), false);
+        self.words[xt].pfa = pfa as i32;
+        self.store_cell(pfa as u16 as u32, 0)?;
+        self.push_ds(2);
+        self.allot()
+    }
+
     pub fn push_ds(&mut self, v: Cell) {
         self.ds.push(v);
     }
@@ -1881,5 +1912,66 @@ mod tests {
         f.push_ds(colon_xt as Cell);
         f.execute().unwrap();
         assert_eq!(f.ds, vec![5, 5]);
+    }
+
+    #[test]
+    fn create_constant_and_variable() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        let before_create = f.here_value().unwrap();
+        f.tib = "MYBUF".to_string();
+        f.in_ptr = 0;
+        f.create().unwrap();
+        let buf_xt = f.find_xt("MYBUF").unwrap();
+        assert_eq!(f.words[buf_xt].kind, WordKind::Create);
+        assert_eq!(f.words[buf_xt].pfa, before_create as i32);
+        f.push_ds(buf_xt as Cell);
+        f.execute().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), before_create);
+
+        let before_var = f.here_value().unwrap();
+        f.tib = "COUNTER".to_string();
+        f.in_ptr = 0;
+        f.variable().unwrap();
+        let var_xt = f.find_xt("COUNTER").unwrap();
+        assert_eq!(f.words[var_xt].kind, WordKind::Variable);
+        assert_eq!(f.words[var_xt].pfa, before_var as i32);
+        assert_eq!(f.here_value().unwrap(), before_var + 2);
+        assert_eq!(f.fetch_cell(before_var as u32).unwrap(), 0);
+
+        f.push_ds(var_xt as Cell);
+        f.execute().unwrap();
+        assert_eq!(f.peek_ds().unwrap(), before_var);
+        f.word_fetch().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 0);
+
+        f.push_ds(77);
+        f.push_ds(var_xt as Cell);
+        f.execute().unwrap();
+        f.word_store().unwrap();
+        assert_eq!(f.fetch_cell(before_var as u32).unwrap(), 77);
+
+        f.push_ds(9876);
+        f.tib = "LIMIT".to_string();
+        f.in_ptr = 0;
+        f.constant().unwrap();
+        let const_xt = f.find_xt("LIMIT").unwrap();
+        assert_eq!(f.words[const_xt].kind, WordKind::Constant);
+        f.push_ds(const_xt as Cell);
+        f.execute().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 9876);
+
+        f.tib = "   ".to_string();
+        f.in_ptr = 0;
+        assert_eq!(f.create().unwrap_err().message, "WORD NAME EXPECTED");
+        f.tib = "   ".to_string();
+        f.in_ptr = 0;
+        assert_eq!(f.variable().unwrap_err().message, "WORD NAME EXPECTED");
+        f.push_ds(1);
+        f.tib = "   ".to_string();
+        f.in_ptr = 0;
+        assert_eq!(f.constant().unwrap_err().message, "WORD NAME EXPECTED");
     }
 }
