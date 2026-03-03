@@ -52,6 +52,8 @@ pub struct Forth<R: BufRead, W: Write> {
     pub in_ptr: usize,
     pub compile_list: Vec<Cell>,
     pub compiling_xt: isize,
+    pub current_body: Vec<Cell>,
+    pub ip: usize,
     pub words: Vec<Word<R, W>>,
     pub words_by_name: HashMap<String, usize>,
     pub latest: isize,
@@ -72,6 +74,8 @@ impl<R: BufRead, W: Write> Forth<R, W> {
             in_ptr: 0,
             compile_list: Vec::new(),
             compiling_xt: -1,
+            current_body: Vec::new(),
+            ip: 0,
             words: Vec::new(),
             words_by_name: HashMap::new(),
             latest: -1,
@@ -131,6 +135,8 @@ impl<R: BufRead, W: Write> Forth<R, W> {
     fn init_primitives(&mut self) {
         self.define_primitive("DUP", Self::dup);
         self.define_primitive("OVER", Self::over);
+        self.define_primitive("+", Self::plus);
+        self.define_primitive("EXIT", Self::exit);
     }
 
     fn require_module(&mut self, _name: &str) {
@@ -292,6 +298,60 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.c_store(addr, (n as u16 & 0xff) as u8)?;
         self.push_ds(1);
         self.allot()
+    }
+
+    pub fn exit(&mut self) -> Result<(), ForthError> {
+        self.ip = self.current_body.len();
+        Ok(())
+    }
+
+    pub fn execute(&mut self) -> Result<(), ForthError> {
+        let xt = self.pop_ds()?;
+        self.execute_xt(xt)
+    }
+
+    pub fn execute_xt(&mut self, xt: Cell) -> Result<(), ForthError> {
+        if xt < 0 || xt as usize >= self.words.len() {
+            return Err(ForthError {
+                message: format!("INVALID EXECUTION TOKEN: {xt}"),
+            });
+        }
+        let idx = xt as usize;
+        let kind = self.words[idx].kind;
+        match kind {
+            WordKind::Primitive => {
+                if let Some(code) = self.words[idx].code {
+                    code(self)?;
+                }
+            }
+            WordKind::Constant => {
+                if let Some(&v) = self.words[idx].body.first() {
+                    self.push_ds(v);
+                }
+            }
+            WordKind::Variable | WordKind::Create => {
+                self.push_ds(self.words[idx].pfa as Cell);
+            }
+            WordKind::Colon => {
+                let body = self.words[idx].body.clone();
+                let saved_body = std::mem::replace(&mut self.current_body, body);
+                let saved_ip = self.ip;
+                self.ip = 0;
+                let result = (|| {
+                    while self.ip < self.current_body.len() {
+                        self.check_interrupt()?;
+                        let nxt = self.current_body[self.ip];
+                        self.ip += 1;
+                        self.execute_xt(nxt)?;
+                    }
+                    Ok(())
+                })();
+                self.current_body = saved_body;
+                self.ip = saved_ip;
+                result?;
+            }
+        }
+        Ok(())
     }
 
     pub fn push_ds(&mut self, v: Cell) {
@@ -1770,5 +1830,56 @@ mod tests {
         f.here().unwrap();
         assert_eq!(f.pop_ds().unwrap(), 1037);
         assert_eq!(f.c_fetch(1036).unwrap(), 0xAB);
+    }
+
+    #[test]
+    fn execute_constant_and_invalid_token() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        let plus_xt = f.find_xt("+").unwrap();
+        f.push_ds(12);
+        f.push_ds(18);
+        f.push_ds(plus_xt as Cell);
+        f.execute().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 30);
+
+        let const_xt = f.define_word("MYCONST", WordKind::Constant, None, vec![999], false);
+        f.push_ds(const_xt as Cell);
+        f.execute().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 999);
+
+        let var_xt = f.define_word("MYVAR", WordKind::Variable, None, Vec::new(), false);
+        f.words[var_xt].pfa = 2048;
+        f.push_ds(var_xt as Cell);
+        f.execute().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 2048);
+
+        let cr_xt = f.define_word("MYBUF", WordKind::Create, None, Vec::new(), false);
+        f.words[cr_xt].pfa = 4096;
+        f.push_ds(cr_xt as Cell);
+        f.execute().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 4096);
+
+        f.push_ds(9999);
+        assert_eq!(
+            f.execute().unwrap_err().message,
+            "INVALID EXECUTION TOKEN: 9999"
+        );
+
+        let exit_xt = f.find_xt("EXIT").unwrap() as Cell;
+        let dup_xt = f.find_xt("DUP").unwrap() as Cell;
+        let colon_xt = f.define_word(
+            "TWICE",
+            WordKind::Colon,
+            None,
+            vec![dup_xt, exit_xt, dup_xt],
+            false,
+        );
+        f.push_ds(5);
+        f.push_ds(colon_xt as Cell);
+        f.execute().unwrap();
+        assert_eq!(f.ds, vec![5, 5]);
     }
 }
