@@ -136,7 +136,9 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.define_primitive("DUP", Self::dup);
         self.define_primitive("OVER", Self::over);
         self.define_primitive("+", Self::plus);
+        self.define_primitive("*", Self::star);
         self.define_primitive("EXIT", Self::exit);
+        self.define_primitive("LIT", Self::lit);
     }
 
     fn require_module(&mut self, _name: &str) {
@@ -1140,11 +1142,51 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         })
     }
 
+    pub fn lit(&mut self) -> Result<(), ForthError> {
+        if self.ip < self.current_body.len() {
+            let v = self.current_body[self.ip];
+            self.ip += 1;
+            self.push_ds(v);
+        }
+        Ok(())
+    }
+
+    pub fn interpret(&mut self) -> Result<(), ForthError> {
+        while self.in_ptr < self.tib.len() {
+            self.check_interrupt()?;
+            let token = match self.parse_word() {
+                Some(t) => t,
+                None => break,
+            };
+            if let Some(xt) = self.find_xt(&token) {
+                let immediate = self.words[xt].immediate;
+                if self.state && !immediate {
+                    self.compile_list.push(xt as Cell);
+                } else {
+                    self.execute_xt(xt as Cell)?;
+                }
+            } else if let Some(num) = self.parse_number(&token) {
+                if self.state {
+                    let lit_xt = self.find_xt("LIT").unwrap() as Cell;
+                    self.compile_list.push(lit_xt);
+                    self.compile_list.push(num);
+                } else {
+                    self.push_ds(num);
+                }
+            } else {
+                self.abort();
+                return Err(ForthError {
+                    message: format!("UNKNOWN WORD: {token}"),
+                });
+            }
+        }
+        Ok(())
+    }
+
     pub fn interpret_line(&mut self, line: &str) -> Result<(), ForthError> {
         self.tib = line.to_string();
         self.in_ptr = 0;
-        // Outer interpreter is filled in a later spec.
-        Ok(())
+        self.interpret()
     }
 
     pub fn repl_step(&mut self) -> Result<(), ForthError> {
@@ -2160,5 +2202,29 @@ mod tests {
         f.number().unwrap();
         assert_eq!(f.pop_ds().unwrap(), 0);
         assert_eq!(f.pop_ds().unwrap(), 0);
+    }
+
+    #[test]
+    fn interpret_and_unknown_word() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        f.interpret_line("10 20 +").unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 30);
+
+        f.interpret_line("5 DUP *").unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 25);
+
+        f.interpret_line("1 2 3 4 + + +").unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 10);
+
+        f.push_ds(100);
+        assert_eq!(
+            f.interpret_line("UNKNOWNWORD 50 +").unwrap_err().message,
+            "UNKNOWN WORD: UNKNOWNWORD"
+        );
+        assert!(f.ds.is_empty());
+        assert!(!f.state);
     }
 }
