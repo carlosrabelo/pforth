@@ -385,6 +385,121 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.allot()
     }
 
+    pub fn base(&mut self) -> Result<(), ForthError> {
+        self.push_ds(BASE_ADDR as Cell);
+        Ok(())
+    }
+
+    pub fn get_base(&self) -> Result<i32, ForthError> {
+        let b = self.fetch_cell(BASE_ADDR as u32)? as i32;
+        if b < 1 {
+            Ok(10)
+        } else {
+            Ok(b)
+        }
+    }
+
+    pub fn parse_number(&self, token: &str) -> Option<Cell> {
+        if token.is_empty() {
+            return None;
+        }
+        let cur_base = self.get_base().ok()? as u32;
+        let bytes = token.as_bytes();
+        let mut start = 0;
+        let mut neg = false;
+        if bytes[0] == b'-' {
+            neg = true;
+            start = 1;
+        } else if bytes[0] == b'+' {
+            start = 1;
+        }
+        if start >= bytes.len() {
+            return None;
+        }
+        let mut parsed_base = cur_base;
+        if bytes[start] == b'$' {
+            parsed_base = 16;
+            start += 1;
+        } else if bytes[start] == b'%' {
+            parsed_base = 2;
+            start += 1;
+        } else if bytes[start] == b'#' {
+            start += 1;
+            if start < bytes.len() && bytes[start] == b'#' {
+                start += 1;
+            }
+        }
+        if start >= bytes.len() {
+            return None;
+        }
+        let mut val: u32 = 0;
+        for &c in &bytes[start..] {
+            let digit = match c {
+                b'0'..=b'9' => (c - b'0') as u32,
+                b'A'..=b'F' => (c - b'A' + 10) as u32,
+                b'a'..=b'f' => (c - b'a' + 10) as u32,
+                _ => return None,
+            };
+            if digit >= parsed_base {
+                return None;
+            }
+            val = val * parsed_base + digit;
+        }
+        let result = (val & 0xffff) as Cell;
+        Some(if neg { result.wrapping_neg() } else { result })
+    }
+
+    pub fn word(&mut self) -> Result<(), ForthError> {
+        let delim = (self.pop_ds()? as u16 & 0xff) as u8 as char;
+        while self.in_ptr < self.tib.len() {
+            let ch = self.tib.as_bytes()[self.in_ptr] as char;
+            if ch == delim {
+                self.in_ptr += 1;
+            } else {
+                break;
+            }
+        }
+        let dest = self.here_value()? as u16 as u32;
+        if self.in_ptr >= self.tib.len() {
+            self.c_store(dest, 0)?;
+            self.push_ds(dest as Cell);
+            return Ok(());
+        }
+        let start = dest + 1;
+        let mut count: u8 = 0;
+        while self.in_ptr < self.tib.len() {
+            let b = self.tib.as_bytes()[self.in_ptr];
+            let ch = b as char;
+            if ch == delim || ch == '\r' || ch == '\n' {
+                break;
+            }
+            self.c_store(start + count as u32, b)?;
+            count = count.wrapping_add(1);
+            self.in_ptr += 1;
+        }
+        self.c_store(dest, count)?;
+        self.c_store(start + count as u32, b' ')?;
+        self.push_ds(dest as Cell);
+        Ok(())
+    }
+
+    pub fn number(&mut self) -> Result<(), ForthError> {
+        let addr = self.pop_ds()? as u16 as u32;
+        let len = self.c_fetch(addr)? as usize;
+        let mut token = String::new();
+        for i in 0..len {
+            token.push(self.c_fetch(addr + 1 + i as u32)? as char);
+        }
+        if let Some(n) = self.parse_number(&token) {
+            self.push_ds(n);
+            self.push_ds(-1);
+        } else {
+            self.push_ds(0);
+            self.push_ds(0);
+        }
+        Ok(())
+    }
+
     pub fn push_ds(&mut self, v: Cell) {
         self.ds.push(v);
     }
@@ -1973,5 +2088,77 @@ mod tests {
         f.tib = "   ".to_string();
         f.in_ptr = 0;
         assert_eq!(f.constant().unwrap_err().message, "WORD NAME EXPECTED");
+    }
+
+    #[test]
+    fn base_and_prefixed_numbers() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        f.base().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), BASE_ADDR as Cell);
+        assert_eq!(f.get_base().unwrap(), 10);
+
+        f.push_ds(16);
+        f.push_ds(BASE_ADDR as Cell);
+        f.word_store().unwrap();
+        assert_eq!(f.get_base().unwrap(), 16);
+
+        f.store_cell(BASE_ADDR as u32, 10).unwrap();
+        assert_eq!(f.parse_number("123"), Some(123));
+        assert_eq!(f.parse_number("-456"), Some(-456));
+        assert_eq!(f.parse_number("+789"), Some(789));
+        assert_eq!(f.parse_number("$1F"), Some(31));
+        assert_eq!(f.parse_number("-$10"), Some(-16));
+        assert_eq!(f.parse_number("%1010"), Some(10));
+
+        f.store_cell(BASE_ADDR as u32, 16).unwrap();
+        assert_eq!(f.parse_number("FF"), Some(255));
+        f.store_cell(BASE_ADDR as u32, 8).unwrap();
+        assert_eq!(f.parse_number("77"), Some(63));
+        f.store_cell(BASE_ADDR as u32, 10).unwrap();
+        assert_eq!(f.parse_number("ABC"), None);
+        assert_eq!(f.parse_number(""), None);
+        assert_eq!(f.parse_number("-"), None);
+    }
+
+    #[test]
+    fn word_and_number() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        f.tib = "   HELLO   WORLD".to_string();
+        f.in_ptr = 0;
+        f.push_ds(b' ' as Cell);
+        f.word().unwrap();
+        let addr = f.pop_ds().unwrap();
+        assert_eq!(addr, f.here_value().unwrap());
+        assert_eq!(f.c_fetch(addr as u32).unwrap(), 5);
+        let mut word_read = String::new();
+        for i in 0..5 {
+            word_read.push(f.c_fetch(addr as u32 + 1 + i).unwrap() as char);
+        }
+        assert_eq!(word_read, "HELLO");
+
+        f.c_store(4000, 4).unwrap();
+        f.c_store(4001, b'1').unwrap();
+        f.c_store(4002, b'2').unwrap();
+        f.c_store(4003, b'3').unwrap();
+        f.c_store(4004, b'4').unwrap();
+        f.push_ds(4000);
+        f.number().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), -1);
+        assert_eq!(f.pop_ds().unwrap(), 1234);
+
+        f.c_store(4010, 3).unwrap();
+        f.c_store(4011, b'X').unwrap();
+        f.c_store(4012, b'Y').unwrap();
+        f.c_store(4013, b'Z').unwrap();
+        f.push_ds(4010);
+        f.number().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 0);
+        assert_eq!(f.pop_ds().unwrap(), 0);
     }
 }
