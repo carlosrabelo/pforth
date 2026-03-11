@@ -135,10 +135,17 @@ impl<R: BufRead, W: Write> Forth<R, W> {
     fn init_primitives(&mut self) {
         self.define_primitive("DUP", Self::dup);
         self.define_primitive("OVER", Self::over);
+        self.define_primitive("SWAP", Self::swap);
         self.define_primitive("+", Self::plus);
         self.define_primitive("*", Self::star);
         self.define_primitive("EXIT", Self::exit);
         self.define_primitive("LIT", Self::lit);
+        self.define_primitive("STATE", Self::word_state);
+        self.define_immediate("[", Self::left_bracket);
+        self.define_primitive("]", Self::right_bracket);
+        self.define_immediate("LITERAL", Self::literal);
+        self.define_primitive("COMPILE", Self::compile);
+        self.define_immediate("[COMPILE]", Self::bracket_compile);
     }
 
     fn require_module(&mut self, _name: &str) {
@@ -1189,6 +1196,44 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.interpret()
     }
 
+    pub fn word_state(&mut self) -> Result<(), ForthError> {
+        self.push_ds(if self.state { -1 } else { 0 });
+        Ok(())
+    }
+
+    pub fn left_bracket(&mut self) -> Result<(), ForthError> {
+        self.state = false;
+        Ok(())
+    }
+
+    pub fn right_bracket(&mut self) -> Result<(), ForthError> {
+        self.state = true;
+        Ok(())
+    }
+
+    pub fn literal(&mut self) -> Result<(), ForthError> {
+        let val = self.pop_ds()?;
+        let lit_xt = self.find_xt("LIT").unwrap() as Cell;
+        self.compile_list.push(lit_xt);
+        self.compile_list.push(val);
+        Ok(())
+    }
+
+    pub fn compile(&mut self) -> Result<(), ForthError> {
+        let token = self.parse_word().ok_or_else(|| ForthError {
+            message: "WORD NAME EXPECTED".to_string(),
+        })?;
+        let xt = self.find_xt(&token).ok_or_else(|| ForthError {
+            message: format!("WORD NOT FOUND: {token}"),
+        })?;
+        self.compile_list.push(xt as Cell);
+        Ok(())
+    }
+
+    pub fn bracket_compile(&mut self) -> Result<(), ForthError> {
+        self.compile()
+    }
+
     pub fn repl_step(&mut self) -> Result<(), ForthError> {
         if !self.state {
             self.output.write_all(b" ok\n").map_err(|e| ForthError {
@@ -1931,8 +1976,8 @@ mod tests {
         assert!(f.lookup("dup").is_some());
         assert!(f.lookup("Dup").is_some());
         assert!(f.lookup("NONEXISTENT").is_none());
-        let xt = f.find_xt("swap");
-        assert!(xt.is_none());
+        let swap_xt = f.find_xt("swap").unwrap();
+        assert_eq!(f.words[swap_xt].name, "SWAP");
         let over_xt = f.find_xt("over").unwrap();
         assert_eq!(f.words[over_xt].name, "OVER");
 
@@ -2226,5 +2271,48 @@ mod tests {
         );
         assert!(f.ds.is_empty());
         assert!(!f.state);
+    }
+
+    #[test]
+    fn state_brackets_literal_and_compile() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        f.word_state().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 0);
+
+        f.right_bracket().unwrap();
+        f.word_state().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), -1);
+        assert!(f.state);
+
+        f.left_bracket().unwrap();
+        f.word_state().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 0);
+        assert!(!f.state);
+
+        let lit_xt = f.find_xt("LIT").unwrap() as Cell;
+        let test_xt = f.define_word("TESTLIT", WordKind::Colon, None, vec![lit_xt, 555], false);
+        f.push_ds(test_xt as Cell);
+        f.execute().unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 555);
+
+        f.compile_list.clear();
+        f.push_ds(888);
+        f.literal().unwrap();
+        assert_eq!(f.compile_list, vec![lit_xt, 888]);
+
+        f.compile_list.clear();
+        f.tib = "SWAP".to_string();
+        f.in_ptr = 0;
+        f.compile().unwrap();
+        assert_eq!(f.compile_list, vec![f.find_xt("SWAP").unwrap() as Cell]);
+
+        f.compile_list.clear();
+        f.tib = "[".to_string();
+        f.in_ptr = 0;
+        f.bracket_compile().unwrap();
+        assert_eq!(f.compile_list, vec![f.find_xt("[").unwrap() as Cell]);
     }
 }
