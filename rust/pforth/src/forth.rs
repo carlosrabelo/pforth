@@ -150,6 +150,8 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.define_immediate(";", Self::semicolon);
         self.define_immediate("IMMEDIATE", Self::immediate);
         self.define_immediate("RECURSE", Self::recurse);
+        self.define_primitive("BRANCH", Self::branch);
+        self.define_primitive("0BRANCH", Self::zero_branch);
     }
 
     fn require_module(&mut self, _name: &str) {
@@ -1299,6 +1301,38 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         Ok(())
     }
 
+    fn branch_by(&mut self, offset: Cell) -> Result<(), ForthError> {
+        let target = self.ip as isize + offset as isize;
+        if target < 0 {
+            return Err(ForthError {
+                message: "INVALID BRANCH TARGET".to_string(),
+            });
+        }
+        self.ip = target as usize;
+        Ok(())
+    }
+
+    pub fn branch(&mut self) -> Result<(), ForthError> {
+        if self.ip < self.current_body.len() {
+            let offset = self.current_body[self.ip];
+            self.branch_by(offset)?;
+        }
+        Ok(())
+    }
+
+    pub fn zero_branch(&mut self) -> Result<(), ForthError> {
+        let flag = self.pop_ds()?;
+        if self.ip < self.current_body.len() {
+            if flag == 0 {
+                let offset = self.current_body[self.ip];
+                self.branch_by(offset)?;
+            } else {
+                self.ip += 1;
+            }
+        }
+        Ok(())
+    }
+
     pub fn repl_step(&mut self) -> Result<(), ForthError> {
         if !self.state {
             self.output.write_all(b" ok\n").map_err(|e| ForthError {
@@ -2432,5 +2466,71 @@ mod tests {
             "WORD NAME EXPECTED"
         );
         assert!(!f.state);
+    }
+
+    #[test]
+    fn branch_and_zero_branch() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        let lit = f.find_xt("LIT").unwrap() as Cell;
+        let branch = f.find_xt("BRANCH").unwrap() as Cell;
+        let zbranch = f.find_xt("0BRANCH").unwrap() as Cell;
+        let exit = f.find_xt("EXIT").unwrap() as Cell;
+        let dup = f.find_xt("DUP").unwrap() as Cell;
+        let plus = f.find_xt("+").unwrap() as Cell;
+
+        let fwd = f.define_word(
+            "TESTBRANCH",
+            WordKind::Colon,
+            None,
+            vec![lit, 10, branch, 3, lit, 999, lit, 20, exit],
+            false,
+        );
+        f.push_ds(fwd as Cell);
+        f.execute().unwrap();
+        assert_eq!(f.ds, vec![10, 20]);
+        f.ds.clear();
+
+        let zero = f.define_word(
+            "TESTZBRANCH",
+            WordKind::Colon,
+            None,
+            vec![zbranch, 3, lit, 999, lit, 42, exit],
+            false,
+        );
+        f.push_ds(0);
+        f.push_ds(zero as Cell);
+        f.execute().unwrap();
+        assert_eq!(f.ds, vec![42]);
+        f.ds.clear();
+
+        f.push_ds(-1);
+        f.push_ds(zero as Cell);
+        f.execute().unwrap();
+        assert_eq!(f.ds, vec![999, 42]);
+        f.ds.clear();
+
+        f.push_ds(zero as Cell);
+        assert_eq!(f.execute().unwrap_err().message, "DATA STACK UNDERFLOW");
+
+        let countdown = f.define_word(
+            "TESTLOOP",
+            WordKind::Colon,
+            None,
+            vec![
+                lit, 3, dup, lit, -1, plus, dup, zbranch, 3, branch, -8, exit,
+            ],
+            false,
+        );
+        f.ds.clear();
+        f.push_ds(countdown as Cell);
+        f.execute().unwrap();
+        assert_eq!(f.ds, vec![3, 2, 1, 0]);
+
+        let bad = f.define_word("TESTBAD", WordKind::Colon, None, vec![branch, -5], false);
+        f.push_ds(bad as Cell);
+        assert_eq!(f.execute().unwrap_err().message, "INVALID BRANCH TARGET");
     }
 }
