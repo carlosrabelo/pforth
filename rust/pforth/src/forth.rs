@@ -146,6 +146,10 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.define_immediate("LITERAL", Self::literal);
         self.define_primitive("COMPILE", Self::compile);
         self.define_immediate("[COMPILE]", Self::bracket_compile);
+        self.define_primitive(":", Self::colon);
+        self.define_immediate(";", Self::semicolon);
+        self.define_immediate("IMMEDIATE", Self::immediate);
+        self.define_immediate("RECURSE", Self::recurse);
     }
 
     fn require_module(&mut self, _name: &str) {
@@ -1234,6 +1238,67 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.compile()
     }
 
+    pub fn colon(&mut self) -> Result<(), ForthError> {
+        if self.state {
+            return Err(ForthError {
+                message: "ALREADY COMPILING".to_string(),
+            });
+        }
+        let token = self.parse_word().ok_or_else(|| ForthError {
+            message: "WORD NAME EXPECTED".to_string(),
+        })?;
+        self.compile_list.clear();
+        let xt = self.define_word(&token, WordKind::Colon, None, Vec::new(), false);
+        self.compiling_xt = xt as isize;
+        self.state = true;
+        Ok(())
+    }
+
+    pub fn semicolon(&mut self) -> Result<(), ForthError> {
+        if !self.state {
+            return Err(ForthError {
+                message: "NOT IN COMPILATION STATE".to_string(),
+            });
+        }
+        let exit_xt = self.find_xt("EXIT").unwrap() as Cell;
+        self.compile_list.push(exit_xt);
+        self.state = false;
+        if self.compiling_xt >= 0 {
+            let xt = self.compiling_xt as usize;
+            if xt < self.words.len() {
+                self.words[xt].body = self.compile_list.clone();
+            }
+        }
+        self.compile_list.clear();
+        self.compiling_xt = -1;
+        Ok(())
+    }
+
+    pub fn immediate(&mut self) -> Result<(), ForthError> {
+        if self.latest >= 0 {
+            let xt = self.latest as usize;
+            if xt < self.words.len() {
+                self.words[xt].immediate = true;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn recurse(&mut self) -> Result<(), ForthError> {
+        if !self.state {
+            return Err(ForthError {
+                message: "RECURSE ONLY IN COMPILATION".to_string(),
+            });
+        }
+        if self.compiling_xt < 0 {
+            return Err(ForthError {
+                message: "NO COMPILATION IN PROGRESS".to_string(),
+            });
+        }
+        self.compile_list.push(self.compiling_xt as Cell);
+        Ok(())
+    }
+
     pub fn repl_step(&mut self) -> Result<(), ForthError> {
         if !self.state {
             self.output.write_all(b" ok\n").map_err(|e| ForthError {
@@ -2314,5 +2379,58 @@ mod tests {
         f.in_ptr = 0;
         f.bracket_compile().unwrap();
         assert_eq!(f.compile_list, vec![f.find_xt("[").unwrap() as Cell]);
+    }
+
+    #[test]
+    fn colon_exit_immediate_and_recurse() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        f.interpret_line(": SQUARE DUP * ;").unwrap();
+        assert!(!f.state);
+        f.interpret_line("5 SQUARE").unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 25);
+
+        f.interpret_line(": DOUBLE DUP + ;").unwrap();
+        f.interpret_line(": QUAD DOUBLE DOUBLE ;").unwrap();
+        f.interpret_line("3 QUAD").unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 12);
+
+        f.interpret_line(": CONST_VAL [ 10 20 + ] LITERAL ;")
+            .unwrap();
+        f.interpret_line("CONST_VAL").unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 30);
+
+        f.interpret_line(": EARLY_EXIT 10 EXIT 20 ;").unwrap();
+        f.interpret_line("EARLY_EXIT").unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 10);
+
+        f.interpret_line(": PUSH77 77 ; IMMEDIATE").unwrap();
+        let push77_xt = f.find_xt("PUSH77").unwrap();
+        assert!(f.words[push77_xt].immediate);
+        f.interpret_line(": CALL_PUSH77 PUSH77 ;").unwrap();
+        assert_eq!(f.pop_ds().unwrap(), 77);
+
+        f.interpret_line(": FOOREC RECURSE ;").unwrap();
+        let foorec_xt = f.find_xt("FOOREC").unwrap();
+        let body = &f.words[foorec_xt].body;
+        assert_eq!(body.len(), 2);
+        assert_eq!(body[0], foorec_xt as Cell);
+        assert_eq!(body[1], f.find_xt("EXIT").unwrap() as Cell);
+
+        assert_eq!(
+            f.interpret_line(";").unwrap_err().message,
+            "NOT IN COMPILATION STATE"
+        );
+        assert_eq!(
+            f.interpret_line("RECURSE").unwrap_err().message,
+            "RECURSE ONLY IN COMPILATION"
+        );
+        assert_eq!(
+            f.interpret_line(":").unwrap_err().message,
+            "WORD NAME EXPECTED"
+        );
+        assert!(!f.state);
     }
 }
