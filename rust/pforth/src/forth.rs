@@ -152,6 +152,9 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.define_immediate("RECURSE", Self::recurse);
         self.define_primitive("BRANCH", Self::branch);
         self.define_primitive("0BRANCH", Self::zero_branch);
+        self.define_immediate("IF", Self::word_if);
+        self.define_immediate("ELSE", Self::word_else);
+        self.define_immediate("THEN", Self::word_then);
     }
 
     fn require_module(&mut self, _name: &str) {
@@ -1330,6 +1333,54 @@ impl<R: BufRead, W: Write> Forth<R, W> {
                 self.ip += 1;
             }
         }
+        Ok(())
+    }
+
+    fn require_compiling(&self, name: &str) -> Result<(), ForthError> {
+        if self.state {
+            Ok(())
+        } else {
+            Err(ForthError {
+                message: format!("{name} ONLY IN COMPILATION"),
+            })
+        }
+    }
+
+    fn pop_branch_origin(&mut self) -> Result<usize, ForthError> {
+        let index = self.pop_ds()?;
+        if index < 0 || index as usize >= self.compile_list.len() {
+            return Err(ForthError {
+                message: "INVALID BRANCH TARGET".to_string(),
+            });
+        }
+        Ok(index as usize)
+    }
+
+    pub fn word_if(&mut self) -> Result<(), ForthError> {
+        self.require_compiling("IF")?;
+        let zbranch = self.find_xt("0BRANCH").unwrap() as Cell;
+        self.compile_list.push(zbranch);
+        self.compile_list.push(0);
+        self.push_ds((self.compile_list.len() - 1) as Cell);
+        Ok(())
+    }
+
+    pub fn word_then(&mut self) -> Result<(), ForthError> {
+        self.require_compiling("THEN")?;
+        let index = self.pop_branch_origin()?;
+        self.compile_list[index] = (self.compile_list.len() - index) as Cell;
+        Ok(())
+    }
+
+    pub fn word_else(&mut self) -> Result<(), ForthError> {
+        self.require_compiling("ELSE")?;
+        let branch = self.find_xt("BRANCH").unwrap() as Cell;
+        self.compile_list.push(branch);
+        self.compile_list.push(0);
+        let new_origin = self.compile_list.len() - 1;
+        let if_origin = self.pop_branch_origin()?;
+        self.compile_list[if_origin] = (new_origin + 1 - if_origin) as Cell;
+        self.push_ds(new_origin as Cell);
         Ok(())
     }
 
@@ -2532,5 +2583,71 @@ mod tests {
         let bad = f.define_word("TESTBAD", WordKind::Colon, None, vec![branch, -5], false);
         f.push_ds(bad as Cell);
         assert_eq!(f.execute().unwrap_err().message, "INVALID BRANCH TARGET");
+    }
+
+    #[test]
+    fn if_else_then() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        f.interpret_line(": PICK1 IF 11 THEN 99 ;").unwrap();
+        f.interpret_line("-1 PICK1").unwrap();
+        assert_eq!(f.ds, vec![11, 99]);
+        f.ds.clear();
+        f.interpret_line("0 PICK1").unwrap();
+        assert_eq!(f.ds, vec![99]);
+        f.ds.clear();
+
+        f.interpret_line(": PICK2 IF 1 ELSE 2 THEN 3 ;").unwrap();
+        f.interpret_line("-1 PICK2").unwrap();
+        assert_eq!(f.ds, vec![1, 3]);
+        f.ds.clear();
+        f.interpret_line("0 PICK2").unwrap();
+        assert_eq!(f.ds, vec![2, 3]);
+        f.ds.clear();
+
+        f.interpret_line(": NEST IF IF 1 ELSE 2 THEN ELSE 3 THEN ;")
+            .unwrap();
+        f.interpret_line("-1 -1 NEST").unwrap();
+        assert_eq!(f.ds, vec![1]);
+        f.ds.clear();
+        f.interpret_line("0 -1 NEST").unwrap();
+        assert_eq!(f.ds, vec![2]);
+        f.ds.clear();
+        f.interpret_line("0 NEST").unwrap();
+        assert_eq!(f.ds, vec![3]);
+        f.ds.clear();
+
+        let zbranch = f.find_xt("0BRANCH").unwrap() as Cell;
+        let branch = f.find_xt("BRANCH").unwrap() as Cell;
+        f.interpret_line(": SHAPE IF 1 ELSE 2 THEN ;").unwrap();
+        let xt = f.find_xt("SHAPE").unwrap();
+        let lit = f.find_xt("LIT").unwrap() as Cell;
+        let exit = f.find_xt("EXIT").unwrap() as Cell;
+        assert_eq!(
+            f.words[xt].body,
+            vec![zbranch, 5, lit, 1, branch, 3, lit, 2, exit]
+        );
+
+        assert_eq!(
+            f.interpret_line("IF").unwrap_err().message,
+            "IF ONLY IN COMPILATION"
+        );
+        assert_eq!(
+            f.interpret_line("ELSE").unwrap_err().message,
+            "ELSE ONLY IN COMPILATION"
+        );
+        assert_eq!(
+            f.interpret_line("THEN").unwrap_err().message,
+            "THEN ONLY IN COMPILATION"
+        );
+
+        f.state = true;
+        f.compile_list.clear();
+        f.push_ds(50);
+        assert_eq!(f.word_then().unwrap_err().message, "INVALID BRANCH TARGET");
+        f.push_ds(-1);
+        assert_eq!(f.word_else().unwrap_err().message, "INVALID BRANCH TARGET");
     }
 }
