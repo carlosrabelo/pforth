@@ -155,6 +155,11 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.define_immediate("IF", Self::word_if);
         self.define_immediate("ELSE", Self::word_else);
         self.define_immediate("THEN", Self::word_then);
+        self.define_immediate("BEGIN", Self::word_begin);
+        self.define_immediate("UNTIL", Self::word_until);
+        self.define_immediate("AGAIN", Self::word_again);
+        self.define_immediate("WHILE", Self::word_while);
+        self.define_immediate("REPEAT", Self::word_repeat);
     }
 
     fn require_module(&mut self, _name: &str) {
@@ -1381,6 +1386,59 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         let if_origin = self.pop_branch_origin()?;
         self.compile_list[if_origin] = (new_origin + 1 - if_origin) as Cell;
         self.push_ds(new_origin as Cell);
+        Ok(())
+    }
+
+    fn compile_backward_branch(&mut self, branch_name: &str, dest: Cell) {
+        let xt = self.find_xt(branch_name).unwrap() as Cell;
+        self.compile_list.push(xt);
+        let offset = dest as isize - self.compile_list.len() as isize;
+        self.compile_list.push(offset as Cell);
+    }
+
+    pub fn word_begin(&mut self) -> Result<(), ForthError> {
+        self.require_compiling("BEGIN")?;
+        self.push_ds(self.compile_list.len() as Cell);
+        Ok(())
+    }
+
+    pub fn word_until(&mut self) -> Result<(), ForthError> {
+        self.require_compiling("UNTIL")?;
+        let dest = self.pop_ds()?;
+        self.compile_backward_branch("0BRANCH", dest);
+        Ok(())
+    }
+
+    pub fn word_again(&mut self) -> Result<(), ForthError> {
+        self.require_compiling("AGAIN")?;
+        let dest = self.pop_ds()?;
+        self.compile_backward_branch("BRANCH", dest);
+        Ok(())
+    }
+
+    pub fn word_while(&mut self) -> Result<(), ForthError> {
+        self.require_compiling("WHILE")?;
+        let dest = self.pop_ds()?;
+        let zbranch = self.find_xt("0BRANCH").unwrap() as Cell;
+        self.compile_list.push(zbranch);
+        self.compile_list.push(0);
+        self.push_ds(dest);
+        self.push_ds((self.compile_list.len() - 1) as Cell);
+        Ok(())
+    }
+
+    pub fn word_repeat(&mut self) -> Result<(), ForthError> {
+        self.require_compiling("REPEAT")?;
+        let origin = self.pop_ds()?;
+        let dest = self.pop_ds()?;
+        self.compile_backward_branch("BRANCH", dest);
+        if origin < 0 || origin as usize >= self.compile_list.len() {
+            return Err(ForthError {
+                message: "INVALID BRANCH TARGET".to_string(),
+            });
+        }
+        let origin = origin as usize;
+        self.compile_list[origin] = (self.compile_list.len() - origin) as Cell;
         Ok(())
     }
 
@@ -2649,5 +2707,68 @@ mod tests {
         assert_eq!(f.word_then().unwrap_err().message, "INVALID BRANCH TARGET");
         f.push_ds(-1);
         assert_eq!(f.word_else().unwrap_err().message, "INVALID BRANCH TARGET");
+    }
+
+    #[test]
+    fn begin_until_again_while_repeat() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+        f.define_primitive("=", Forth::equals);
+        f.define_primitive("<", Forth::less);
+
+        f.interpret_line(": UP3 0 BEGIN 1 + DUP 3 = UNTIL ;")
+            .unwrap();
+        f.interpret_line("UP3").unwrap();
+        assert_eq!(f.ds, vec![3]);
+        f.ds.clear();
+
+        f.interpret_line(": FOREVER 0 BEGIN 1 + DUP 4 = IF EXIT THEN AGAIN ;")
+            .unwrap();
+        f.interpret_line("FOREVER").unwrap();
+        assert_eq!(f.ds, vec![4]);
+        f.ds.clear();
+
+        f.interpret_line(": FILL5 0 BEGIN DUP 5 < WHILE 1 + REPEAT ;")
+            .unwrap();
+        f.interpret_line("FILL5").unwrap();
+        assert_eq!(f.ds, vec![5]);
+        f.ds.clear();
+
+        let zbranch = f.find_xt("0BRANCH").unwrap() as Cell;
+        let branch = f.find_xt("BRANCH").unwrap() as Cell;
+        let exit = f.find_xt("EXIT").unwrap() as Cell;
+        f.interpret_line(": SPIN BEGIN AGAIN ;").unwrap();
+        let spin = f.find_xt("SPIN").unwrap();
+        assert_eq!(f.words[spin].body, vec![branch, -1, exit]);
+        f.interpret_line(": WAIT BEGIN UNTIL ;").unwrap();
+        let wait = f.find_xt("WAIT").unwrap();
+        assert_eq!(f.words[wait].body, vec![zbranch, -1, exit]);
+        f.interpret_line(": LOOPED BEGIN 0 WHILE REPEAT ;").unwrap();
+        let looped = f.find_xt("LOOPED").unwrap();
+        let lit = f.find_xt("LIT").unwrap() as Cell;
+        assert_eq!(
+            f.words[looped].body,
+            vec![lit, 0, zbranch, 3, branch, -5, exit]
+        );
+
+        for (word, message) in [
+            ("BEGIN", "BEGIN ONLY IN COMPILATION"),
+            ("UNTIL", "UNTIL ONLY IN COMPILATION"),
+            ("AGAIN", "AGAIN ONLY IN COMPILATION"),
+            ("WHILE", "WHILE ONLY IN COMPILATION"),
+            ("REPEAT", "REPEAT ONLY IN COMPILATION"),
+        ] {
+            assert_eq!(f.interpret_line(word).unwrap_err().message, message);
+        }
+
+        f.state = true;
+        f.compile_list.clear();
+        f.push_ds(0);
+        f.push_ds(90);
+        assert_eq!(
+            f.word_repeat().unwrap_err().message,
+            "INVALID BRANCH TARGET"
+        );
     }
 }
