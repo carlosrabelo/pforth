@@ -160,6 +160,17 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.define_immediate("AGAIN", Self::word_again);
         self.define_immediate("WHILE", Self::word_while);
         self.define_immediate("REPEAT", Self::word_repeat);
+        self.define_primitive("(DO)", Self::do_run);
+        self.define_primitive("(LOOP)", Self::loop_run);
+        self.define_primitive("(+LOOP)", Self::plus_loop_run);
+        self.define_primitive("(LEAVE)", Self::leave_run);
+        self.define_primitive("I", Self::word_i);
+        self.define_primitive("J", Self::word_j);
+        self.define_primitive("UNLOOP", Self::unloop);
+        self.define_immediate("DO", Self::word_do);
+        self.define_immediate("LOOP", Self::word_loop);
+        self.define_immediate("+LOOP", Self::word_plus_loop);
+        self.define_immediate("LEAVE", Self::word_leave);
     }
 
     fn require_module(&mut self, _name: &str) {
@@ -1439,6 +1450,108 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         }
         let origin = origin as usize;
         self.compile_list[origin] = (self.compile_list.len() - origin) as Cell;
+        Ok(())
+    }
+
+    pub fn do_run(&mut self) -> Result<(), ForthError> {
+        let start = self.pop_ds()?;
+        let limit = self.pop_ds()?;
+        self.push_rs(limit);
+        self.push_rs(start);
+        Ok(())
+    }
+
+    fn loop_back_or_skip(
+        &mut self,
+        leave: bool,
+        limit: Cell,
+        index: Cell,
+    ) -> Result<(), ForthError> {
+        if leave {
+            self.ip += 1;
+            return Ok(());
+        }
+        self.push_rs(limit);
+        self.push_rs(index);
+        self.branch()
+    }
+
+    pub fn loop_run(&mut self) -> Result<(), ForthError> {
+        let index = self.pop_rs()?.wrapping_add(1);
+        let limit = self.pop_rs()?;
+        self.loop_back_or_skip(index >= limit, limit, index)
+    }
+
+    pub fn plus_loop_run(&mut self) -> Result<(), ForthError> {
+        let step = self.pop_ds()?;
+        let index = self.pop_rs()?.wrapping_add(step);
+        let limit = self.pop_rs()?;
+        let done = (step > 0 && index >= limit) || (step < 0 && index <= limit);
+        self.loop_back_or_skip(done, limit, index)
+    }
+
+    pub fn leave_run(&mut self) -> Result<(), ForthError> {
+        let len = self.rs.len();
+        if len >= 2 {
+            self.rs[len - 1] = self.rs[len - 2];
+        }
+        Ok(())
+    }
+
+    pub fn word_i(&mut self) -> Result<(), ForthError> {
+        let index = self.peek_rs()?;
+        self.push_ds(index);
+        Ok(())
+    }
+
+    pub fn word_j(&mut self) -> Result<(), ForthError> {
+        if self.rs.len() < 4 {
+            return Err(ForthError {
+                message: "J: NOT ENOUGH LOOP LEVELS".to_string(),
+            });
+        }
+        let outer = self.rs[self.rs.len() - 3];
+        self.push_ds(outer);
+        Ok(())
+    }
+
+    pub fn unloop(&mut self) -> Result<(), ForthError> {
+        if self.rs.len() < 2 {
+            return Err(ForthError {
+                message: "RETURN STACK UNDERFLOW".to_string(),
+            });
+        }
+        self.rs.pop();
+        self.rs.pop();
+        Ok(())
+    }
+
+    pub fn word_do(&mut self) -> Result<(), ForthError> {
+        self.require_compiling("DO")?;
+        let xt = self.find_xt("(DO)").unwrap() as Cell;
+        self.compile_list.push(xt);
+        self.push_ds(self.compile_list.len() as Cell);
+        Ok(())
+    }
+
+    pub fn word_loop(&mut self) -> Result<(), ForthError> {
+        self.require_compiling("LOOP")?;
+        let dest = self.pop_ds()?;
+        self.compile_backward_branch("(LOOP)", dest);
+        Ok(())
+    }
+
+    pub fn word_plus_loop(&mut self) -> Result<(), ForthError> {
+        self.require_compiling("+LOOP")?;
+        let dest = self.pop_ds()?;
+        self.compile_backward_branch("(+LOOP)", dest);
+        Ok(())
+    }
+
+    pub fn word_leave(&mut self) -> Result<(), ForthError> {
+        self.require_compiling("LEAVE")?;
+        let xt = self.find_xt("(LEAVE)").unwrap() as Cell;
+        self.compile_list.push(xt);
         Ok(())
     }
 
@@ -2770,5 +2883,87 @@ mod tests {
             f.word_repeat().unwrap_err().message,
             "INVALID BRANCH TARGET"
         );
+    }
+
+    #[test]
+    fn do_loop_i_j_leave_unloop() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+        f.define_primitive("=", Forth::equals);
+
+        let run = |f: &mut Forth<Cursor<Vec<u8>>, &mut Vec<u8>>, line: &str| {
+            f.interpret_line(line).unwrap();
+            let out = f.ds.clone();
+            f.ds.clear();
+            out
+        };
+
+        f.interpret_line(": SUM 0 5 0 DO I + LOOP ;").unwrap();
+        assert_eq!(run(&mut f, "SUM"), vec![10]);
+        assert!(f.rs.is_empty());
+
+        f.interpret_line(": SKIP2 0 10 0 DO I + 2 +LOOP ;").unwrap();
+        assert_eq!(run(&mut f, "SKIP2"), vec![20]);
+
+        f.interpret_line(": DOWN3 0 0 10 DO I + -3 +LOOP ;")
+            .unwrap();
+        assert_eq!(run(&mut f, "DOWN3"), vec![22]);
+
+        f.interpret_line(": NESTED 0 3 0 DO 2 0 DO J + LOOP LOOP ;")
+            .unwrap();
+        assert_eq!(run(&mut f, "NESTED"), vec![6]);
+        assert!(f.rs.is_empty());
+
+        f.interpret_line(": EARLY 0 10 0 DO I + I 3 = IF LEAVE THEN LOOP ;")
+            .unwrap();
+        assert_eq!(run(&mut f, "EARLY"), vec![6]);
+        assert!(f.rs.is_empty());
+
+        f.interpret_line(": ESCAPE 10 0 DO I 2 = IF I UNLOOP EXIT THEN LOOP 99 ;")
+            .unwrap();
+        assert_eq!(run(&mut f, "ESCAPE"), vec![2]);
+        assert!(f.rs.is_empty());
+
+        let do_xt = f.find_xt("(DO)").unwrap() as Cell;
+        let loop_xt = f.find_xt("(LOOP)").unwrap() as Cell;
+        let exit = f.find_xt("EXIT").unwrap() as Cell;
+        let lit = f.find_xt("LIT").unwrap() as Cell;
+        f.interpret_line(": EMPTY 3 0 DO LOOP ;").unwrap();
+        let empty = f.find_xt("EMPTY").unwrap();
+        assert_eq!(
+            f.words[empty].body,
+            vec![lit, 3, lit, 0, do_xt, loop_xt, -1, exit]
+        );
+
+        f.rs.clear();
+        assert_eq!(
+            f.interpret_line("I").unwrap_err().message,
+            "RETURN STACK UNDERFLOW"
+        );
+        f.rs.extend([5, 0]);
+        assert_eq!(
+            f.interpret_line("J").unwrap_err().message,
+            "J: NOT ENOUGH LOOP LEVELS"
+        );
+        f.interpret_line("UNLOOP").unwrap();
+        assert!(f.rs.is_empty());
+        assert_eq!(
+            f.interpret_line("UNLOOP").unwrap_err().message,
+            "RETURN STACK UNDERFLOW"
+        );
+        f.rs.push(1);
+        f.interpret_line("(LEAVE)").unwrap();
+        assert_eq!(f.rs, vec![1]);
+        f.rs.clear();
+
+        for (word, message) in [
+            ("DO", "DO ONLY IN COMPILATION"),
+            ("LOOP", "LOOP ONLY IN COMPILATION"),
+            ("+LOOP", "+LOOP ONLY IN COMPILATION"),
+            ("LEAVE", "LEAVE ONLY IN COMPILATION"),
+        ] {
+            assert_eq!(f.interpret_line(word).unwrap_err().message, message);
+        }
     }
 }
