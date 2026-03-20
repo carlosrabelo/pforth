@@ -171,6 +171,9 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.define_immediate("LOOP", Self::word_loop);
         self.define_immediate("+LOOP", Self::word_plus_loop);
         self.define_immediate("LEAVE", Self::word_leave);
+        self.define_primitive(".", Self::dot);
+        self.define_primitive("U.", Self::u_dot);
+        self.define_primitive(".S", Self::dot_s);
     }
 
     fn require_module(&mut self, _name: &str) {
@@ -1553,6 +1556,67 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         let xt = self.find_xt("(LEAVE)").unwrap() as Cell;
         self.compile_list.push(xt);
         Ok(())
+    }
+
+    fn write_text(&mut self, text: &str) -> Result<(), ForthError> {
+        self.output
+            .write_all(text.as_bytes())
+            .map_err(|e| ForthError {
+                message: e.to_string(),
+            })
+    }
+
+    fn format_cell(val: Cell, base: i32, signed: bool) -> String {
+        let base = if (2..=36).contains(&base) { base } else { 10 } as u32;
+        let negative = signed && val < 0;
+        let mut magnitude: u32 = if signed {
+            (val as i32).unsigned_abs()
+        } else {
+            val as u16 as u32
+        };
+        if magnitude == 0 {
+            return "0".to_string();
+        }
+        let mut digits = Vec::new();
+        while magnitude > 0 {
+            digits.push(
+                std::char::from_digit(magnitude % base, base)
+                    .unwrap()
+                    .to_ascii_uppercase(),
+            );
+            magnitude /= base;
+        }
+        if negative {
+            digits.push('-');
+        }
+        digits.iter().rev().collect()
+    }
+
+    pub fn dot(&mut self) -> Result<(), ForthError> {
+        let n = self.pop_ds()?;
+        let text = Self::format_cell(n, self.get_base()?, true);
+        self.write_text(&format!("{text} "))
+    }
+
+    pub fn u_dot(&mut self) -> Result<(), ForthError> {
+        let n = self.pop_ds()?;
+        let text = Self::format_cell(n, self.get_base()?, false);
+        self.write_text(&format!("{text} "))
+    }
+
+    pub fn dot_s(&mut self) -> Result<(), ForthError> {
+        let base = self.get_base()?;
+        let mut text = format!("<{}>", self.ds.len());
+        for &cell in &self.ds {
+            text.push(' ');
+            text.push_str(&Self::format_cell(cell, base, true));
+        }
+        text.push(' ');
+        self.write_text(&text)
+    }
+
+    pub fn page(&mut self) -> Result<(), ForthError> {
+        self.write_text("\x1b[2J\x1b[H")
     }
 
     pub fn repl_step(&mut self) -> Result<(), ForthError> {
@@ -2965,5 +3029,44 @@ mod tests {
         ] {
             assert_eq!(f.interpret_line(word).unwrap_err().message, message);
         }
+    }
+
+    #[test]
+    fn numeric_output_and_dot_s() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        {
+            let mut f = Forth::new(input, &mut output);
+
+            f.interpret_line("42 .").unwrap();
+            f.interpret_line("-1 U.").unwrap();
+            f.interpret_line("-7 . 0 . 0 U.").unwrap();
+            f.interpret_line("-32768 . 32767 U.").unwrap();
+
+            f.store_cell(BASE_ADDR as u32, 16).unwrap();
+            f.interpret_line("FF . -1 U. -FF .").unwrap();
+            f.store_cell(BASE_ADDR as u32, 2).unwrap();
+            f.interpret_line("101 . -1 U.").unwrap();
+            f.store_cell(BASE_ADDR as u32, 36).unwrap();
+            f.interpret_line("-1 U.").unwrap();
+            f.store_cell(BASE_ADDR as u32, 99).unwrap();
+            f.interpret_line("12 .").unwrap();
+            f.store_cell(BASE_ADDR as u32, 10).unwrap();
+
+            f.interpret_line(".S").unwrap();
+            f.interpret_line("1 -2 3 .S").unwrap();
+            assert_eq!(f.ds, vec![1, -2, 3]);
+            f.ds.clear();
+
+            f.page().unwrap();
+            assert_eq!(
+                f.interpret_line(".").unwrap_err().message,
+                "DATA STACK UNDERFLOW"
+            );
+        }
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "42 65535 -7 0 0 -32768 32767 FF FFFF -FF 101 1111111111111111 1EKF 101 <0> <3> 1 -2 3 \x1b[2J\x1b[H"
+        );
     }
 }
