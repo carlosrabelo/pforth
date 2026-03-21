@@ -174,6 +174,11 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.define_primitive(".", Self::dot);
         self.define_primitive("U.", Self::u_dot);
         self.define_primitive(".S", Self::dot_s);
+        self.define_primitive("TYPE", Self::type_word);
+        self.define_immediate(".\"", Self::dot_quote);
+        self.define_immediate("S\"", Self::s_quote);
+        self.define_immediate("(", Self::paren);
+        self.define_immediate("\\", Self::backslash);
     }
 
     fn require_module(&mut self, _name: &str) {
@@ -1617,6 +1622,83 @@ impl<R: BufRead, W: Write> Forth<R, W> {
 
     pub fn page(&mut self) -> Result<(), ForthError> {
         self.write_text("\x1b[2J\x1b[H")
+    }
+
+    fn parse_string(&mut self) -> Vec<u8> {
+        let bytes = self.tib.as_bytes();
+        let mut pos = self.in_ptr;
+        if pos < bytes.len() && bytes[pos] == b' ' {
+            pos += 1;
+        }
+        let start = pos;
+        while pos < bytes.len() && bytes[pos] != b'"' {
+            pos += 1;
+        }
+        let text = bytes[start..pos].to_vec();
+        if pos < bytes.len() {
+            pos += 1;
+        }
+        self.in_ptr = pos;
+        text
+    }
+
+    fn store_string(&mut self, text: &[u8]) -> Result<Cell, ForthError> {
+        let addr = self.here_value()?;
+        for (i, &b) in text.iter().enumerate() {
+            self.c_store(addr as u16 as u32 + i as u32, b)?;
+        }
+        self.store_cell(DP_ADDR as u32, addr.wrapping_add(text.len() as Cell))?;
+        Ok(addr)
+    }
+
+    fn compile_string_literal(&mut self, addr: Cell, len: usize) {
+        let lit = self.find_xt("LIT").unwrap() as Cell;
+        self.compile_list.extend([lit, addr, lit, len as Cell]);
+    }
+
+    pub fn dot_quote(&mut self) -> Result<(), ForthError> {
+        let text = self.parse_string();
+        if self.state {
+            let addr = self.store_string(&text)?;
+            self.compile_string_literal(addr, text.len());
+            let type_xt = self.find_xt("TYPE").unwrap() as Cell;
+            self.compile_list.push(type_xt);
+            Ok(())
+        } else {
+            self.output.write_all(&text).map_err(|e| ForthError {
+                message: e.to_string(),
+            })
+        }
+    }
+
+    pub fn s_quote(&mut self) -> Result<(), ForthError> {
+        let text = self.parse_string();
+        let addr = self.store_string(&text)?;
+        if self.state {
+            self.compile_string_literal(addr, text.len());
+        } else {
+            self.push_ds(addr);
+            self.push_ds(text.len() as Cell);
+        }
+        Ok(())
+    }
+
+    pub fn paren(&mut self) -> Result<(), ForthError> {
+        let bytes = self.tib.as_bytes();
+        let mut pos = self.in_ptr;
+        while pos < bytes.len() && bytes[pos] != b')' {
+            pos += 1;
+        }
+        if pos < bytes.len() {
+            pos += 1;
+        }
+        self.in_ptr = pos;
+        Ok(())
+    }
+
+    pub fn backslash(&mut self) -> Result<(), ForthError> {
+        self.in_ptr = self.tib.len();
+        Ok(())
     }
 
     pub fn repl_step(&mut self) -> Result<(), ForthError> {
@@ -3068,5 +3150,59 @@ mod tests {
             String::from_utf8(output).unwrap(),
             "42 65535 -7 0 0 -32768 32767 FF FFFF -FF 101 1111111111111111 1EKF 101 <0> <3> 1 -2 3 \x1b[2J\x1b[H"
         );
+    }
+
+    #[test]
+    fn strings_and_comments() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        {
+            let mut f = Forth::new(input, &mut output);
+
+            f.interpret_line(".\" hello\" 7").unwrap();
+            assert_eq!(f.ds, vec![7]);
+            f.ds.clear();
+            assert_eq!(f.here_value().unwrap(), INITIAL_DP);
+
+            f.interpret_line("S\" abc\"").unwrap();
+            assert_eq!(f.ds, vec![INITIAL_DP, 3]);
+            assert_eq!(&f.memory[1024..1027], b"abc");
+            assert_eq!(f.here_value().unwrap(), INITIAL_DP + 3);
+            f.interpret_line("TYPE").unwrap();
+            f.interpret_line("S\" \"").unwrap();
+            assert_eq!(f.ds, vec![INITIAL_DP + 3, 0]);
+            f.ds.clear();
+
+            f.interpret_line(": GREET .\" hi there\" ;").unwrap();
+            let greet = f.find_xt("GREET").unwrap();
+            let lit = f.find_xt("LIT").unwrap() as Cell;
+            let type_xt = f.find_xt("TYPE").unwrap() as Cell;
+            let exit = f.find_xt("EXIT").unwrap() as Cell;
+            let addr = INITIAL_DP + 3;
+            assert_eq!(f.words[greet].body, vec![lit, addr, lit, 8, type_xt, exit]);
+            assert_eq!(&f.memory[addr as usize..addr as usize + 8], b"hi there");
+            f.interpret_line("GREET").unwrap();
+
+            f.interpret_line(": NAME S\" xyz\" ;").unwrap();
+            f.interpret_line("NAME").unwrap();
+            assert_eq!(f.ds, vec![addr + 8, 3]);
+            f.ds.clear();
+
+            f.interpret_line("1 ( skipped words ) 2").unwrap();
+            assert_eq!(f.ds, vec![1, 2]);
+            f.ds.clear();
+            f.interpret_line("3 ( unterminated 4").unwrap();
+            assert_eq!(f.ds, vec![3]);
+            f.ds.clear();
+            f.interpret_line(": PAREN 5 ( inside ) 6 ;").unwrap();
+            f.interpret_line("PAREN").unwrap();
+            assert_eq!(f.ds, vec![5, 6]);
+            f.ds.clear();
+
+            f.interpret_line("8 \\ 9 10").unwrap();
+            assert_eq!(f.ds, vec![8]);
+            assert_eq!(f.in_ptr, f.tib.len());
+        }
+        assert_eq!(String::from_utf8(output).unwrap(), "helloabchi there");
     }
 }
