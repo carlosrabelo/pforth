@@ -177,6 +177,9 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.define_primitive("TYPE", Self::type_word);
         self.define_immediate(".\"", Self::dot_quote);
         self.define_immediate("S\"", Self::s_quote);
+        self.define_primitive("EVALUATE", Self::evaluate);
+        self.define_primitive("INCLUDED", Self::included);
+        self.define_primitive("INCLUDE", Self::include);
         self.define_immediate("(", Self::paren);
         self.define_immediate("\\", Self::backslash);
     }
@@ -1701,6 +1704,61 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         Ok(())
     }
 
+    fn pop_text(&mut self) -> Result<String, ForthError> {
+        let len = self.pop_ds()?.max(0) as usize;
+        let addr = self.pop_ds()? as u16 as usize;
+        let bytes: Vec<u8> = (0..len).map(|i| self.memory[(addr + i) & 0xffff]).collect();
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    pub fn evaluate(&mut self) -> Result<(), ForthError> {
+        let text = self.pop_text()?;
+        let saved_tib = std::mem::replace(&mut self.tib, text);
+        let saved_in_ptr = std::mem::replace(&mut self.in_ptr, 0);
+        let result = self.interpret();
+        self.tib = saved_tib;
+        self.in_ptr = saved_in_ptr;
+        result
+    }
+
+    pub fn load_system(&mut self, text: &str) -> Result<(), ForthError> {
+        let saved_tib = self.tib.clone();
+        let saved_in_ptr = self.in_ptr;
+        let result = (|| {
+            for line in text.lines() {
+                self.check_interrupt()?;
+                let trimmed = line.trim_start();
+                if trimmed.is_empty() || trimmed.starts_with('\\') {
+                    continue;
+                }
+                self.interpret_line(line)?;
+            }
+            Ok(())
+        })();
+        self.tib = saved_tib;
+        self.in_ptr = saved_in_ptr;
+        result
+    }
+
+    pub fn load_file(&mut self, path: &str) -> Result<(), ForthError> {
+        let bytes = std::fs::read(path).map_err(|_| ForthError {
+            message: format!("CANNOT OPEN: {path}"),
+        })?;
+        self.load_system(&String::from_utf8_lossy(&bytes))
+    }
+
+    pub fn included(&mut self) -> Result<(), ForthError> {
+        let path = self.pop_text()?;
+        self.load_file(&path)
+    }
+
+    pub fn include(&mut self) -> Result<(), ForthError> {
+        let path = self.parse_word().ok_or_else(|| ForthError {
+            message: "FILE NAME EXPECTED".to_string(),
+        })?;
+        self.load_file(&path)
+    }
+
     pub fn repl_step(&mut self) -> Result<(), ForthError> {
         if !self.state {
             self.output.write_all(b" ok\n").map_err(|e| ForthError {
@@ -3204,5 +3262,88 @@ mod tests {
             assert_eq!(f.in_ptr, f.tib.len());
         }
         assert_eq!(String::from_utf8(output).unwrap(), "helloabchi there");
+    }
+
+    #[test]
+    fn evaluate_include_and_missing_file() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        f.interpret_line("S\" 1 2 +\" EVALUATE 10 *").unwrap();
+        assert_eq!(f.ds, vec![30]);
+        f.ds.clear();
+
+        f.interpret_line(": ADDED S\" 4 5 +\" EVALUATE ;").unwrap();
+        f.interpret_line("ADDED").unwrap();
+        assert_eq!(f.ds, vec![9]);
+        f.ds.clear();
+
+        f.tib = "keep this".to_string();
+        f.in_ptr = 4;
+        let addr = f.here_value().unwrap();
+        for (i, b) in b"1 NOPE".iter().enumerate() {
+            f.memory[addr as usize + i] = *b;
+        }
+        f.push_ds(addr);
+        f.push_ds(6);
+        assert_eq!(f.evaluate().unwrap_err().message, "UNKNOWN WORD: NOPE");
+        assert_eq!(f.tib, "keep this");
+        assert_eq!(f.in_ptr, 4);
+        f.ds.clear();
+
+        let path = std::env::temp_dir().join(format!("pforth_include_{}.fs", std::process::id()));
+        std::fs::write(
+            &path,
+            "\\ a comment line\n\n  \\ indented comment\n: SQ DUP * ;\n5 SQ\n",
+        )
+        .unwrap();
+        let name = path.to_str().unwrap().to_string();
+
+        f.tib = "outer".to_string();
+        f.in_ptr = 2;
+        f.interpret_line(&format!("INCLUDE {name}")).unwrap();
+        assert_eq!(f.ds, vec![25]);
+        f.ds.clear();
+
+        f.tib = "outer".to_string();
+        f.in_ptr = 2;
+        f.load_file(&name).unwrap();
+        assert_eq!(f.tib, "outer");
+        assert_eq!(f.in_ptr, 2);
+        f.ds.clear();
+
+        let addr = f.here_value().unwrap();
+        for (i, b) in name.bytes().enumerate() {
+            f.memory[addr as usize + i] = b;
+        }
+        f.push_ds(addr);
+        f.push_ds(name.len() as Cell);
+        f.included().unwrap();
+        assert_eq!(f.ds, vec![25]);
+        f.ds.clear();
+        std::fs::remove_file(&path).unwrap();
+
+        let missing = "/no/such/dir/missing.fs";
+        assert_eq!(
+            f.interpret_line(&format!("INCLUDE {missing}"))
+                .unwrap_err()
+                .message,
+            format!("CANNOT OPEN: {missing}")
+        );
+        assert_eq!(
+            f.load_file(missing).unwrap_err().message,
+            format!("CANNOT OPEN: {missing}")
+        );
+        assert_eq!(
+            f.interpret_line("INCLUDE").unwrap_err().message,
+            "FILE NAME EXPECTED"
+        );
+        assert_eq!(
+            f.interpret_line(&format!("S\" {missing}\" INCLUDED"))
+                .unwrap_err()
+                .message,
+            format!("CANNOT OPEN: {missing}")
+        );
     }
 }
