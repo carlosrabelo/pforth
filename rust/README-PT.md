@@ -13,6 +13,15 @@ Implementação em Rust do interpretador e compilador Forth determinístico de 1
 make build
 ```
 
+## Estrutura do projeto
+
+```
+Makefile             # Orquestrador do componente
+.make/               # Scripts de build, test, quality e run
+bin/                 # Binário copiado (ignorado pelo git)
+pforth/              # Pacote Cargo
+```
+
 ## Desenvolvimento
 
 ```bash
