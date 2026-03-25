@@ -1,5 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, Write};
+use std::path::PathBuf;
 
 pub type Cell = i16;
 
@@ -57,6 +58,7 @@ pub struct Forth<R: BufRead, W: Write> {
     pub words: Vec<Word<R, W>>,
     pub words_by_name: HashMap<String, usize>,
     pub latest: isize,
+    pub loaded_modules: HashSet<String>,
     pub input: R,
     pub output: W,
 }
@@ -79,6 +81,7 @@ impl<R: BufRead, W: Write> Forth<R, W> {
             words: Vec::new(),
             words_by_name: HashMap::new(),
             latest: -1,
+            loaded_modules: HashSet::new(),
             input,
             output,
         };
@@ -86,7 +89,7 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         f.store_cell(DP_ADDR as u32, INITIAL_DP).unwrap();
         f.store_cell(BASE_ADDR as u32, 10).unwrap();
         f.init_primitives();
-        f.require_module("CORE");
+        let _ = f.require_module("CORE");
         f
     }
 
@@ -177,6 +180,20 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.define_primitive("TYPE", Self::type_word);
         self.define_immediate(".\"", Self::dot_quote);
         self.define_immediate("S\"", Self::s_quote);
+        self.define_primitive("DROP", Self::drop);
+        self.define_primitive(">R", Self::to_r);
+        self.define_primitive("R>", Self::r_from);
+        self.define_primitive("-", Self::minus);
+        self.define_primitive("/MOD", Self::slash_mod);
+        self.define_primitive("OR", Self::or);
+        self.define_primitive("=", Self::equals);
+        self.define_primitive("<", Self::less);
+        self.define_primitive(">", Self::greater);
+        self.define_primitive("@", Self::word_fetch);
+        self.define_primitive("!", Self::word_store);
+        self.define_primitive("FILL", Self::fill);
+        self.define_primitive("EMIT", Self::emit);
+        self.define_primitive("#REQUIRE", Self::word_require);
         self.define_primitive("EVALUATE", Self::evaluate);
         self.define_primitive("INCLUDED", Self::included);
         self.define_primitive("INCLUDE", Self::include);
@@ -184,8 +201,57 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.define_immediate("\\", Self::backslash);
     }
 
-    fn require_module(&mut self, _name: &str) {
-        // Module loading grows in later tasks.
+    pub fn require_module(&mut self, name: &str) -> Result<(), ForthError> {
+        let upper = Self::uppercase_name(name);
+        if self.loaded_modules.contains(&upper) {
+            return Ok(());
+        }
+        if let Some(path) = Self::find_lib_path(name) {
+            self.loaded_modules.insert(upper);
+            return self.load_file(&path);
+        }
+        Err(ForthError {
+            message: format!("MODULE NOT FOUND: {upper}"),
+        })
+    }
+
+    fn find_lib_path(name: &str) -> Option<String> {
+        let mut file = name.to_ascii_lowercase();
+        if !file.ends_with(".fs") {
+            file.push_str(".fs");
+        }
+        if let Ok(lib) = std::env::var("PFORTH_LIB") {
+            let candidate = PathBuf::from(lib).join(&file);
+            if candidate.is_file() {
+                return Some(candidate.to_string_lossy().into_owned());
+            }
+        }
+        if let Ok(cwd) = std::env::current_dir() {
+            let candidate = cwd.join("pforth").join(&file);
+            if candidate.is_file() {
+                return Some(candidate.to_string_lossy().into_owned());
+            }
+        }
+        let mut dir = std::env::current_dir().ok()?;
+        loop {
+            for sub in ["libs", "demos"] {
+                let candidate = dir.join(sub).join(&file);
+                if candidate.is_file() {
+                    return Some(candidate.to_string_lossy().into_owned());
+                }
+            }
+            if !dir.pop() {
+                break;
+            }
+        }
+        None
+    }
+
+    pub fn word_require(&mut self) -> Result<(), ForthError> {
+        let name = self.parse_word().ok_or_else(|| ForthError {
+            message: "MODULE NAME EXPECTED".to_string(),
+        })?;
+        self.require_module(&name)
     }
 
     fn uppercase_name(name: &str) -> String {
@@ -1729,6 +1795,12 @@ impl<R: BufRead, W: Write> Forth<R, W> {
                 self.check_interrupt()?;
                 let trimmed = line.trim_start();
                 if trimmed.is_empty() || trimmed.starts_with('\\') {
+                    continue;
+                }
+                if let Some(rest) = trimmed.strip_prefix("#REQUIRE") {
+                    if let Some(name) = rest.split_whitespace().next() {
+                        self.require_module(name)?;
+                    }
                     continue;
                 }
                 self.interpret_line(line)?;
@@ -3345,5 +3417,96 @@ mod tests {
                 .message,
             format!("CANNOT OPEN: {missing}")
         );
+    }
+
+    #[test]
+    fn require_core_colon_words() {
+        let input = Cursor::new(Vec::new());
+        let mut output = Vec::new();
+        let mut f = Forth::new(input, &mut output);
+
+        assert!(f.loaded_modules.contains("CORE"));
+        for name in [
+            "NIP", "TUCK", "ROT", "-ROT", "2DUP", "2DROP", "/", "MOD", "0=", "<>", "0<>", "0<",
+            "0>", "<=", ">=", "1+", "1-", "2+", "2-", "2*", "2/", "NEGATE", "+!", "ABS", "MIN",
+            "MAX", "SPACE", "SPACES", "?", "PAGE", "ERASE",
+        ] {
+            let xt = f.find_xt(name).unwrap();
+            assert_eq!(f.words[xt].kind, WordKind::Colon, "{name}");
+        }
+
+        let run = |f: &mut Forth<Cursor<Vec<u8>>, &mut Vec<u8>>, line: &str| {
+            f.interpret_line(line).unwrap();
+            let out = f.ds.clone();
+            f.ds.clear();
+            out
+        };
+        assert_eq!(run(&mut f, "1 2 NIP"), vec![2]);
+        assert_eq!(run(&mut f, "1 2 TUCK"), vec![2, 1, 2]);
+        assert_eq!(run(&mut f, "1 2 3 ROT"), vec![2, 3, 1]);
+        assert_eq!(run(&mut f, "1 2 3 -ROT"), vec![3, 1, 2]);
+        assert_eq!(run(&mut f, "1 2 2DUP"), vec![1, 2, 1, 2]);
+        assert_eq!(run(&mut f, "1 2 2DROP"), Vec::<Cell>::new());
+        assert_eq!(run(&mut f, "-7 2 /"), vec![-3]);
+        assert_eq!(run(&mut f, "-7 2 MOD"), vec![-1]);
+        assert_eq!(run(&mut f, "0 0= 5 0= 3 0<> 0 0<>"), vec![-1, 0, -1, 0]);
+        assert_eq!(run(&mut f, "-1 0< 1 0< 1 0> 0 0>"), vec![-1, 0, -1, 0]);
+        assert_eq!(run(&mut f, "1 2 <> 2 2 <>"), vec![-1, 0]);
+        assert_eq!(run(&mut f, "1 2 <= 2 2 <= 3 2 <="), vec![-1, -1, 0]);
+        assert_eq!(run(&mut f, "1 2 >= 2 2 >= 3 2 >="), vec![0, -1, -1]);
+        assert_eq!(
+            run(&mut f, "5 1+ 5 1- 5 2+ 5 2- 5 2*"),
+            vec![6, 4, 7, 3, 10]
+        );
+        assert_eq!(run(&mut f, "-9 2/ 7 NEGATE"), vec![-4, -7]);
+        assert_eq!(run(&mut f, "-5 ABS 5 ABS"), vec![5, 5]);
+        assert_eq!(
+            run(&mut f, "3 9 MIN 9 3 MIN 3 9 MAX 9 3 MAX"),
+            vec![3, 3, 9, 9]
+        );
+        assert_eq!(run(&mut f, "2000 DUP 10 SWAP ! 5 SWAP +! 2000 @"), vec![15]);
+        assert_eq!(run(&mut f, "2000 3 SPACES -1 SPACES"), vec![2000]);
+        assert_eq!(run(&mut f, "2000 ?"), vec![]);
+        f.interpret_line("PAGE").unwrap();
+        f.memory[3000] = 7;
+        f.memory[3001] = 7;
+        assert_eq!(run(&mut f, "3000 2 ERASE 3000 @"), vec![0]);
+
+        let dir = std::env::temp_dir().join(format!("pforth_req_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("libs")).unwrap();
+        std::fs::create_dir_all(dir.join("demos")).unwrap();
+        std::fs::create_dir_all(dir.join("work/deeper")).unwrap();
+        std::fs::write(dir.join("libs/twice.fs"), ": TWICE DUP + ;\n").unwrap();
+        std::fs::write(
+            dir.join("demos/other.fs"),
+            "#REQUIRE twice\n: FOURFOLD TWICE TWICE ;\n",
+        )
+        .unwrap();
+        let saved_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir.join("work/deeper")).unwrap();
+
+        let run2 = |f: &mut Forth<Cursor<Vec<u8>>, &mut Vec<u8>>, line: &str| {
+            let result = f.interpret_line(line);
+            let out = f.ds.clone();
+            f.ds.clear();
+            (result, out)
+        };
+        let (r, _) = run2(&mut f, "#REQUIRE other.fs");
+        r.unwrap();
+        assert_eq!(run2(&mut f, "3 FOURFOLD"), (Ok(()), vec![12]));
+        assert_eq!(run2(&mut f, "#REQUIRE OTHER.FS"), (Ok(()), vec![]));
+        let (r, _) = run2(&mut f, "#REQUIRE nothere");
+        let missing = r.unwrap_err().message;
+        let (r, _) = run2(&mut f, "#REQUIRE");
+        let no_name = r.unwrap_err().message;
+
+        std::env::set_current_dir(saved_dir).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        assert_eq!(missing, "MODULE NOT FOUND: NOTHERE");
+        assert_eq!(no_name, "MODULE NAME EXPECTED");
+        assert!(f.loaded_modules.contains("TWICE"));
+        assert!(f.loaded_modules.contains("OTHER.FS"));
     }
 }
