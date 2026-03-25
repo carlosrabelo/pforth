@@ -13,6 +13,15 @@ Rust implementation of the PForth 16-bit deterministic Forth interpreter and com
 make build
 ```
 
+## Project Layout
+
+```
+Makefile             # Component orchestrator (`$(MAKE) -C pforth`)
+.make/               # Build, test, quality, and run scripts
+bin/                 # Copied binary (git-ignored)
+pforth/              # Cargo package (Cargo.toml, sources, tests)
+```
+
 ## Development
 
 ```bash
