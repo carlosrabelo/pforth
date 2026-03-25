@@ -31,6 +31,10 @@ make quality         # rustfmt check and clippy
 make clean           # Remove target/ and bin/pforth
 ```
 
+## Libraries
+
+`make test` sets `PFORTH_LIB` to the repository `pforth/` directory so cold start can load `CORE`.
+
 ## License
 
 This project is licensed under the MIT License — see [LICENSE](../LICENSE) for details.

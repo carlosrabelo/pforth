@@ -31,6 +31,10 @@ make quality         # rustfmt check e clippy
 make clean           # Remove target/ e bin/pforth
 ```
 
+## Bibliotecas
+
+`make test` define `PFORTH_LIB` para o diretório `pforth/` do repositório.
+
 ## Licença
 
 Este projeto está licenciado sob a Licença MIT — veja [LICENSE](../LICENSE) para detalhes.
