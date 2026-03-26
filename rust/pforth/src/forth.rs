@@ -193,6 +193,14 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.define_primitive("!", Self::word_store);
         self.define_primitive("FILL", Self::fill);
         self.define_primitive("EMIT", Self::emit);
+        self.define_primitive("CR", Self::cr);
+        self.define_primitive("C@", Self::word_c_fetch);
+        self.define_primitive("C!", Self::word_c_store);
+        self.define_primitive("C,", Self::c_comma);
+        self.define_primitive("ALLOT", Self::allot);
+        self.define_primitive("CREATE", Self::create);
+        self.define_primitive("CONSTANT", Self::constant);
+        self.define_primitive("VARIABLE", Self::variable);
         self.define_primitive("#REQUIRE", Self::word_require);
         self.define_primitive("EVALUATE", Self::evaluate);
         self.define_primitive("INCLUDED", Self::included);

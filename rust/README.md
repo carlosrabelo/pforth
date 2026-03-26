@@ -13,6 +13,13 @@ Rust implementation of the PForth 16-bit deterministic Forth interpreter and com
 make build
 ```
 
+## Usage
+
+```bash
+./bin/pforth
+./bin/pforth ../demos/hello.fs
+```
+
 ## Project Layout
 
 ```
