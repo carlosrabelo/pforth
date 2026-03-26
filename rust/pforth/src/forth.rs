@@ -194,6 +194,8 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.define_primitive("FILL", Self::fill);
         self.define_primitive("EMIT", Self::emit);
         self.define_primitive("CR", Self::cr);
+        self.define_primitive("WORDS", Self::list_words);
+        self.define_primitive("DUMP", Self::dump);
         self.define_primitive("C@", Self::word_c_fetch);
         self.define_primitive("C!", Self::word_c_store);
         self.define_primitive("C,", Self::c_comma);
@@ -1837,6 +1839,70 @@ impl<R: BufRead, W: Write> Forth<R, W> {
             message: "FILE NAME EXPECTED".to_string(),
         })?;
         self.load_file(&path)
+    }
+
+    pub fn list_words(&mut self) -> Result<(), ForthError> {
+        let names: Vec<String> = self
+            .words
+            .iter()
+            .rev()
+            .map(|w| {
+                if w.immediate {
+                    format!("I:{}", w.name)
+                } else {
+                    w.name.clone()
+                }
+            })
+            .collect();
+        self.write_text(&format!(
+            "{}
+",
+            names.join(" ")
+        ))
+    }
+
+    pub fn dump(&mut self) -> Result<(), ForthError> {
+        let len = self.pop_ds()?;
+        let mut addr = self.pop_ds()? as u16 as usize;
+        if len <= 0 {
+            return Ok(());
+        }
+        let mut remaining = len as usize;
+        while remaining > 0 {
+            if addr > 65535 {
+                return Err(ForthError {
+                    message: "OUT OF MEMORY RANGE".to_string(),
+                });
+            }
+            let want = remaining.min(16);
+            let fit = want.min(65536 - addr);
+            let bytes = &self.memory[addr..addr + fit];
+            let hex: Vec<String> = bytes.iter().map(|b| format!("{b:02X}")).collect();
+            let ascii: String = bytes
+                .iter()
+                .map(|&b| {
+                    if (32..=126).contains(&b) {
+                        b as char
+                    } else {
+                        '.'
+                    }
+                })
+                .collect();
+            let row = format!(
+                "{addr:04X}  {}  {ascii}
+",
+                hex.join(" ")
+            );
+            self.write_text(&row)?;
+            addr += fit;
+            remaining -= fit;
+            if fit < want {
+                return Err(ForthError {
+                    message: "OUT OF MEMORY RANGE".to_string(),
+                });
+            }
+        }
+        Ok(())
     }
 
     pub fn repl_step(&mut self) -> Result<(), ForthError> {
