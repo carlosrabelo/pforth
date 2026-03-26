@@ -1868,6 +1868,36 @@ impl<R: BufRead, W: Write> Forth<R, W> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Config {
+    pub interactive: bool,
+    pub file_paths: Vec<String>,
+}
+
+pub fn parse_args(args: &[String]) -> Config {
+    Config {
+        interactive: args.len() == 1,
+        file_paths: args.iter().skip(1).cloned().collect(),
+    }
+}
+
+pub fn run<R: BufRead, W: Write, E: Write>(cfg: &Config, input: R, output: W, mut err: E) -> i32 {
+    let mut forth = Forth::new(input, output);
+    for path in &cfg.file_paths {
+        if let Err(e) = forth.load_file(path) {
+            let _ = writeln!(err, "{}", e.message);
+            return 1;
+        }
+    }
+    if cfg.interactive {
+        if let Err(e) = forth.quit() {
+            let _ = writeln!(err, "{}", e.message);
+            return 1;
+        }
+    }
+    0
+}
+
 static SIGINT_FLAG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static SIGINT_INSTALLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
