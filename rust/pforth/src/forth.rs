@@ -59,6 +59,7 @@ pub struct Forth<R: BufRead, W: Write> {
     pub words_by_name: HashMap<String, usize>,
     pub latest: isize,
     pub loaded_modules: HashSet<String>,
+    pub last_save_path: Option<String>,
     pub input: R,
     pub output: W,
 }
@@ -82,6 +83,7 @@ impl<R: BufRead, W: Write> Forth<R, W> {
             words_by_name: HashMap::new(),
             latest: -1,
             loaded_modules: HashSet::new(),
+            last_save_path: None,
             input,
             output,
         };
@@ -195,6 +197,8 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.define_primitive("EMIT", Self::emit);
         self.define_primitive("CR", Self::cr);
         self.define_primitive("RUNNING", Self::running_word);
+        self.define_primitive("LOAD-FILE", Self::load_file_word);
+        self.define_primitive("SAVE-FILE", Self::save_file_word);
         self.define_primitive("WORDS", Self::list_words);
         self.define_primitive("DUMP", Self::dump);
         self.define_primitive("C@", Self::word_c_fetch);
@@ -1840,6 +1844,44 @@ impl<R: BufRead, W: Write> Forth<R, W> {
             message: "FILE NAME EXPECTED".to_string(),
         })?;
         self.load_file(&path)
+    }
+
+    pub fn load_file_word(&mut self) -> Result<(), ForthError> {
+        let path = self.parse_word().ok_or_else(|| ForthError {
+            message: "FILE NAME EXPECTED".to_string(),
+        })?;
+        let maxlen = self.pop_ds()?;
+        let addr = self.pop_ds()? as u16 as usize;
+        self.last_save_path = Some(path.clone());
+        if maxlen <= 0 {
+            self.push_ds(0);
+            return Ok(());
+        }
+        let bytes = std::fs::read(&path).map_err(|_| ForthError {
+            message: format!("CANNOT OPEN: {path}"),
+        })?;
+        let mut n = bytes.len().min(maxlen as usize);
+        n = n.min(self.memory.len() - addr);
+        self.memory[addr..addr + n].copy_from_slice(&bytes[..n]);
+        self.push_ds(n as Cell);
+        Ok(())
+    }
+
+    pub fn save_file_word(&mut self) -> Result<(), ForthError> {
+        let path = self.last_save_path.clone().ok_or_else(|| ForthError {
+            message: "EDITOR FILE".to_string(),
+        })?;
+        let len = self.pop_ds()?;
+        let addr = self.pop_ds()? as u16 as usize;
+        let n = if len <= 0 {
+            0
+        } else {
+            (len as usize).min(self.memory.len() - addr)
+        };
+        std::fs::write(&path, &self.memory[addr..addr + n]).map_err(|_| ForthError {
+            message: format!("CANNOT OPEN: {path}"),
+        })?;
+        Ok(())
     }
 
     pub fn running_word(&mut self) -> Result<(), ForthError> {

@@ -73,3 +73,48 @@ fn running_and_eof() {
     f.running_word().unwrap();
     assert_eq!(f.ds.pop(), Some(0));
 }
+
+#[test]
+fn load_file_and_save_file() {
+    let dir = std::env::temp_dir().join(format!("pforth_lsf_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("data.txt");
+    std::fs::write(&path, b"hello").unwrap();
+    let name = path.to_str().unwrap();
+    let missing = dir.join("missing.txt");
+    let missing = missing.to_str().unwrap();
+
+    let mut f = engine();
+    assert_eq!(
+        f.interpret_line("0 0 SAVE-FILE").unwrap_err().message,
+        "EDITOR FILE"
+    );
+    assert_eq!(
+        f.interpret_line("2000 100 LOAD-FILE").unwrap_err().message,
+        "FILE NAME EXPECTED"
+    );
+    f.interpret_line(&format!("2000 100 LOAD-FILE {name}"))
+        .unwrap();
+    assert!(f.ds.pop().unwrap() >= 5);
+    assert_eq!(f.memory[2000], b'h');
+    assert_eq!(f.memory[2004], b'o');
+    f.interpret_line(&format!("2000 3 LOAD-FILE {name}"))
+        .unwrap();
+    assert_eq!(f.ds.pop(), Some(3));
+
+    f.memory[3000] = b'o';
+    f.memory[3001] = b'k';
+    f.interpret_line("3000 2 SAVE-FILE").unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), b"ok");
+    f.interpret_line("3000 0 SAVE-FILE").unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), b"");
+
+    assert_eq!(
+        f.interpret_line(&format!("2000 10 LOAD-FILE {missing}"))
+            .unwrap_err()
+            .message,
+        format!("CANNOT OPEN: {missing}")
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
