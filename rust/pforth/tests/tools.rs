@@ -139,3 +139,75 @@ fn rest_of_line_and_error() {
     f.push_ds(5);
     assert_eq!(f.error_word().unwrap_err().message, "BOOM!");
 }
+
+#[test]
+fn block_editor() {
+    let mut f = engine();
+    take_output(&mut f);
+
+    assert_eq!(
+        f.interpret_line("LIST").unwrap_err().message,
+        "UNKNOWN WORD: LIST"
+    );
+    f.interpret_line("#REQUIRE EDITOR").unwrap();
+
+    assert_eq!(
+        f.interpret_line("FLUSH").unwrap_err().message,
+        "EDITOR FILE"
+    );
+    assert_eq!(
+        f.interpret_line("OPEN").unwrap_err().message,
+        "FILE NAME EXPECTED"
+    );
+    assert_eq!(
+        f.interpret_line("OPEN /no/such/dir/block.txt")
+            .unwrap_err()
+            .message,
+        "CANNOT OPEN: /no/such/dir/block.txt"
+    );
+
+    let path = std::env::temp_dir().join(format!("pforth_editor_{}.blk", std::process::id()));
+    std::fs::write(&path, "first line").unwrap();
+    let name = path.to_str().unwrap();
+    f.interpret_line(&format!("OPEN {name}")).unwrap();
+    f.interpret_line("LIST").unwrap();
+    let mut expected = String::from("0: first line\n");
+    for line in 1..16 {
+        expected.push_str(&format!("{line}: \n"));
+    }
+    assert_eq!(take_output(&mut f), expected);
+
+    f.interpret_line("0 P hello world").unwrap();
+    f.interpret_line("15 P last").unwrap();
+    f.interpret_line("3 P").unwrap();
+    assert_eq!(
+        f.interpret_line("16 P x").unwrap_err().message,
+        "EDITOR LINE"
+    );
+    assert_eq!(
+        f.interpret_line("-1 P x").unwrap_err().message,
+        "EDITOR LINE"
+    );
+    f.interpret_line("LIST").unwrap();
+    let listing = take_output(&mut f);
+    assert!(listing.starts_with("0: hello world\n1: \n2: \n3: \n"));
+    assert!(listing.ends_with("15: last\n"));
+
+    let long = "x".repeat(70);
+    f.interpret_line(&format!("1 P {long}")).unwrap();
+    f.interpret_line("FLUSH").unwrap();
+    let saved = std::fs::read(&path).unwrap();
+    assert_eq!(saved.len(), 1024);
+    assert_eq!(
+        &saved[..64],
+        format!("hello world{}", " ".repeat(53)).as_bytes()
+    );
+    assert_eq!(&saved[64..128], "x".repeat(64).as_bytes());
+    assert_eq!(&saved[128..132], b"    ");
+    assert_eq!(&saved[15 * 64..15 * 64 + 4], b"last");
+
+    f.interpret_line(&format!("OPEN {name}")).unwrap();
+    f.interpret_line("LIST").unwrap();
+    assert!(take_output(&mut f).starts_with("0: hello world\n1: xxxx"));
+    std::fs::remove_file(&path).unwrap();
+}
