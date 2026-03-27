@@ -194,6 +194,7 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.define_primitive("FILL", Self::fill);
         self.define_primitive("EMIT", Self::emit);
         self.define_primitive("CR", Self::cr);
+        self.define_primitive("RUNNING", Self::running_word);
         self.define_primitive("WORDS", Self::list_words);
         self.define_primitive("DUMP", Self::dump);
         self.define_primitive("C@", Self::word_c_fetch);
@@ -1839,6 +1840,11 @@ impl<R: BufRead, W: Write> Forth<R, W> {
             message: "FILE NAME EXPECTED".to_string(),
         })?;
         self.load_file(&path)
+    }
+
+    pub fn running_word(&mut self) -> Result<(), ForthError> {
+        self.push_ds(Self::flag(self.running));
+        Ok(())
     }
 
     pub fn list_words(&mut self) -> Result<(), ForthError> {
