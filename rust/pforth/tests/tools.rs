@@ -118,3 +118,24 @@ fn load_file_and_save_file() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn rest_of_line_and_error() {
+    let mut f = engine();
+    f.tib = "  hello world".to_string();
+    f.in_ptr = 0;
+    f.push_ds(4000);
+    f.push_ds(64);
+    f.rest_of_line().unwrap();
+    assert_eq!(f.ds.pop(), Some(11));
+    assert_eq!(f.memory[4000], b'h');
+    assert_eq!(f.memory[4010], b'd');
+    assert_eq!(f.in_ptr, f.tib.len());
+
+    for (i, b) in b"BOOM!".iter().enumerate() {
+        f.memory[5000 + i] = *b;
+    }
+    f.push_ds(5000);
+    f.push_ds(5);
+    assert_eq!(f.error_word().unwrap_err().message, "BOOM!");
+}

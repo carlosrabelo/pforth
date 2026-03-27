@@ -199,6 +199,8 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.define_primitive("RUNNING", Self::running_word);
         self.define_primitive("LOAD-FILE", Self::load_file_word);
         self.define_primitive("SAVE-FILE", Self::save_file_word);
+        self.define_primitive("REST-OF-LINE", Self::rest_of_line);
+        self.define_primitive("ERROR", Self::error_word);
         self.define_primitive("WORDS", Self::list_words);
         self.define_primitive("DUMP", Self::dump);
         self.define_primitive("C@", Self::word_c_fetch);
@@ -1844,6 +1846,41 @@ impl<R: BufRead, W: Write> Forth<R, W> {
             message: "FILE NAME EXPECTED".to_string(),
         })?;
         self.load_file(&path)
+    }
+
+    pub fn rest_of_line(&mut self) -> Result<(), ForthError> {
+        let maxlen = self.pop_ds()?;
+        let addr = self.pop_ds()? as u16 as usize;
+        let bytes = self.tib.as_bytes();
+        while self.in_ptr < bytes.len() && bytes[self.in_ptr] == b' ' {
+            self.in_ptr += 1;
+        }
+        let rest = &bytes[self.in_ptr.min(bytes.len())..];
+        self.in_ptr = self.tib.len();
+        let n = if maxlen <= 0 {
+            0
+        } else {
+            rest.len()
+                .min(maxlen as usize)
+                .min(self.memory.len().saturating_sub(addr))
+        };
+        if n > 0 {
+            self.memory[addr..addr + n].copy_from_slice(&rest[..n]);
+        }
+        self.push_ds(n as Cell);
+        Ok(())
+    }
+
+    pub fn error_word(&mut self) -> Result<(), ForthError> {
+        let len = self.pop_ds()?;
+        let addr = self.pop_ds()? as u16 as usize;
+        let n = if len <= 0 {
+            0
+        } else {
+            (len as usize).min(self.memory.len().saturating_sub(addr))
+        };
+        let message = String::from_utf8_lossy(&self.memory[addr..addr + n]).into_owned();
+        Err(ForthError { message })
     }
 
     pub fn load_file_word(&mut self) -> Result<(), ForthError> {
