@@ -59,3 +59,17 @@ fn words_and_dump() {
         "DATA STACK UNDERFLOW"
     );
 }
+
+#[test]
+fn running_and_eof() {
+    let mut f = Forth::new(Cursor::new(Vec::new()), Vec::new());
+    assert!(f.running);
+    f.running_word().unwrap();
+    assert_eq!(f.ds.pop(), Some(-1));
+    f.push_ds(2000);
+    f.push_ds(20);
+    f.expect().unwrap();
+    assert!(!f.running);
+    f.running_word().unwrap();
+    assert_eq!(f.ds.pop(), Some(0));
+}
