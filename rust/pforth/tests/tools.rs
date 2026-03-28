@@ -211,3 +211,60 @@ fn block_editor() {
     assert!(take_output(&mut f).starts_with("0: hello world\n1: xxxx"));
     std::fs::remove_file(&path).unwrap();
 }
+
+fn play_script(script: &str) -> (Engine, String) {
+    let mut f: Engine = Forth::new(Cursor::new(script.as_bytes().to_vec()), Vec::new());
+    take_output(&mut f);
+    assert_eq!(
+        f.interpret_line("PLAY").unwrap_err().message,
+        "UNKNOWN WORD: PLAY"
+    );
+    f.interpret_line("#REQUIRE ADVENTURE").unwrap();
+    f.interpret_line("PLAY").unwrap();
+    let out = take_output(&mut f);
+    (f, out)
+}
+
+#[test]
+fn text_adventure() {
+    let (f, out) = play_script("NORTH\nEAST\n");
+    assert_eq!(
+        out,
+        "You are in a small room.\n\
+         Exits: NORTH\n\
+         > NORTH\n\
+         You are in a hall.\n\
+         Exits: SOUTH EAST\n\
+         > EAST\n\
+         You found the key.\n\
+         > "
+    );
+    assert!(!f.running);
+    assert!(f.loaded_modules.contains("ADVENTURE"));
+
+    let (_, out) = play_script("west\n north \nNORTH\nSOUTH\nEAST\n");
+    assert_eq!(
+        out,
+        "You are in a small room.\n\
+         Exits: NORTH\n\
+         > west\n\
+         Can't go that way.\n\
+         You are in a small room.\n\
+         Exits: NORTH\n\
+         >  north \n\
+         You are in a hall.\n\
+         Exits: SOUTH EAST\n\
+         > NORTH\n\
+         Can't go that way.\n\
+         You are in a hall.\n\
+         Exits: SOUTH EAST\n\
+         > SOUTH\n\
+         You are in a small room.\n\
+         Exits: NORTH\n\
+         > EAST\n\
+         Can't go that way.\n\
+         You are in a small room.\n\
+         Exits: NORTH\n\
+         > "
+    );
+}

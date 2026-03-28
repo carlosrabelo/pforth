@@ -216,6 +216,18 @@ impl<R: BufRead, W: Write> Forth<R, W> {
         self.define_primitive("INCLUDE", Self::include);
         self.define_immediate("(", Self::paren);
         self.define_immediate("\\", Self::backslash);
+        self.define_primitive("AND", Self::and);
+        self.define_primitive("XOR", Self::xor);
+        self.define_primitive("INVERT", Self::invert);
+        self.define_primitive("KEY", Self::key);
+        self.define_primitive("BYE", Self::bye);
+        self.define_primitive("EXPECT", Self::expect);
+        self.define_primitive("SPAN", Self::span);
+        self.define_primitive("HERE", Self::here);
+        self.define_primitive("PAD", Self::pad);
+        self.define_primitive("WORD", Self::word);
+        self.define_primitive("NUMBER", Self::number);
+        self.define_primitive("BASE", Self::base);
     }
 
     pub fn require_module(&mut self, name: &str) -> Result<(), ForthError> {
