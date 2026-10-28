@@ -48,6 +48,7 @@ public:
     std::vector<Cell> current_body;
     int ip{0};
     std::vector<Cell> compile_list;
+    int compiling_xt{-1};
 
     // Dictionary
     std::vector<Word> words;
@@ -214,6 +215,13 @@ public:
     void word_literal();         // LITERAL
     void word_compile();         // COMPILE
     void word_bracket_compile(); // [COMPILE]
+
+    // Spec 006.4 Colon Definition Compiler and Immediate Flag
+    void word_colon();     // :
+    void word_semicolon(); // ;
+    void word_exit();      // EXIT
+    void word_immediate(); // IMMEDIATE
+    void word_recurse();   // RECURSE
 
     // Spec 001.2 Console I/O Primitives
     void key();

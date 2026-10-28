@@ -181,4 +181,65 @@ TEST_CASE("Interpreter - Compiler state and directives (STATE, [, ], LIT, LITERA
     REQUIRE(f.compile_list[0] == f.find_xt("["));
 }
 
+TEST_CASE("Interpreter - Colon definition compiler (:, ;, EXIT)", "[interpreter]") {
+    pforth::Forth f;
+
+    // Colon definition and execution
+    f.interpret_line(": SQUARE DUP * ;");
+    REQUIRE(f.state == false);
+    f.interpret_line("5 SQUARE");
+    REQUIRE(f.ds.size() == 1);
+    REQUIRE(f.pop_ds() == 25);
+
+    // Nested colon words
+    f.interpret_line(": DOUBLE DUP + ;");
+    f.interpret_line(": QUAD DOUBLE DOUBLE ;");
+    f.interpret_line("3 QUAD");
+    REQUIRE(f.ds.size() == 1);
+    REQUIRE(f.pop_ds() == 12);
+
+    // [ and ] calculation during definition
+    f.interpret_line(": CONST_VAL [ 10 20 + ] LITERAL ;");
+    f.interpret_line("CONST_VAL");
+    REQUIRE(f.ds.size() == 1);
+    REQUIRE(f.pop_ds() == 30);
+
+    // EXIT primitive exits early
+    f.interpret_line(": EARLY_EXIT 10 EXIT 20 ;");
+    f.interpret_line("EARLY_EXIT");
+    REQUIRE(f.ds.size() == 1);
+    REQUIRE(f.pop_ds() == 10);
+}
+
+TEST_CASE("Interpreter - IMMEDIATE and RECURSE", "[interpreter]") {
+    pforth::Forth f;
+
+    // IMMEDIATE word executes during compilation
+    f.interpret_line(": PUSH77 77 ; IMMEDIATE");
+    int push77_xt = f.find_xt("PUSH77");
+    REQUIRE(push77_xt >= 0);
+    REQUIRE(f.words[push77_xt].immediate == true);
+
+    f.interpret_line(": CALL_PUSH77 PUSH77 ;");
+    // PUSH77 executed during compilation, leaving 77 on stack
+    REQUIRE(f.ds.size() == 1);
+    REQUIRE(f.pop_ds() == 77);
+
+    // RECURSE compiles current definition's XT
+    f.interpret_line(": FOOREC RECURSE ;");
+    int foorec_xt = f.find_xt("FOOREC");
+    REQUIRE(foorec_xt >= 0);
+    const auto& body = f.words[foorec_xt].body;
+    REQUIRE(body.size() == 2);
+    REQUIRE(body[0] == foorec_xt);
+    REQUIRE(body[1] == f.find_xt("EXIT"));
+
+    // Error handling
+    REQUIRE_THROWS_WITH(f.interpret_line(";"), "NOT IN COMPILATION STATE");
+    REQUIRE_THROWS_WITH(f.interpret_line("RECURSE"), "RECURSE ONLY IN COMPILATION");
+    REQUIRE_THROWS_WITH(f.interpret_line(":"), "WORD NAME EXPECTED");
+    // abort() was called after error, so state should be reset
+    REQUIRE(f.state == false);
+}
+
 

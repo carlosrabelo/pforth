@@ -49,6 +49,7 @@ void Forth::abort() {
     ds.clear();
     rs.clear();
     compile_list.clear();
+    compiling_xt = -1;
     state = false;
     in_ptr = tib.size();
 }
@@ -1098,6 +1099,59 @@ void Forth::word_bracket_compile() {
     compile_list.push_back(static_cast<Cell>(xt));
 }
 
+void Forth::word_colon() {
+    if (state) {
+        throw std::runtime_error("ALREADY COMPILING");
+    }
+    std::string token;
+    if (!parse_word(token)) {
+        throw std::runtime_error("WORD NAME EXPECTED");
+    }
+    compile_list.clear();
+    define_word(token, WordType::Colon, nullptr, {}, false);
+    compiling_xt = static_cast<int>(words.size()) - 1;
+    state = true;
+}
+
+void Forth::word_semicolon() {
+    if (!state) {
+        throw std::runtime_error("NOT IN COMPILATION STATE");
+    }
+    int exit_xt = find_xt("EXIT");
+    if (exit_xt < 0) {
+        define_primitive("EXIT", [](Forth* f) { f->word_exit(); });
+        exit_xt = find_xt("EXIT");
+    }
+    compile_list.push_back(static_cast<Cell>(exit_xt));
+    state = false;
+    if (compiling_xt >= 0 && compiling_xt < static_cast<int>(words.size())) {
+        words[compiling_xt].body = compile_list;
+    }
+    compile_list.clear();
+    compiling_xt = -1;
+}
+
+void Forth::word_exit() {
+    ip = static_cast<int>(current_body.size());
+}
+
+void Forth::word_immediate() {
+    Word* w = latest_word();
+    if (w) {
+        w->immediate = true;
+    }
+}
+
+void Forth::word_recurse() {
+    if (!state) {
+        throw std::runtime_error("RECURSE ONLY IN COMPILATION");
+    }
+    if (compiling_xt < 0) {
+        throw std::runtime_error("NO COMPILATION IN PROGRESS");
+    }
+    compile_list.push_back(static_cast<Cell>(compiling_xt));
+}
+
 void Forth::init_primitives() {
     define_primitive("DUP", [](Forth* f) { f->word_dup(); });
     define_primitive("DROP", [](Forth* f) { f->word_drop(); });
@@ -1207,6 +1261,12 @@ void Forth::init_primitives() {
     define_immediate("LITERAL", [](Forth* f) { f->word_literal(); });
     define_primitive("COMPILE", [](Forth* f) { f->word_compile(); });
     define_immediate("[COMPILE]", [](Forth* f) { f->word_bracket_compile(); });
+
+    define_primitive("EXIT", [](Forth* f) { f->word_exit(); });
+    define_primitive(":", [](Forth* f) { f->word_colon(); });
+    define_immediate(";", [](Forth* f) { f->word_semicolon(); });
+    define_immediate("IMMEDIATE", [](Forth* f) { f->word_immediate(); });
+    define_immediate("RECURSE", [](Forth* f) { f->word_recurse(); });
 }
 
 } // namespace pforth
