@@ -14,15 +14,19 @@ help: ## Show available targets
 build: ## Build all components
 	@$(MAKE) -C cpp build
 	@$(MAKE) -C go build
+	@$(MAKE) -C pascal build
 
 test: ## Run tests across all components
 	@$(MAKE) -C cpp test
 	@$(MAKE) -C go test
+	@$(MAKE) -C pascal test
 
 quality: ## Run quality checks across all components
 	@$(MAKE) -C cpp quality
 	@$(MAKE) -C go quality
+	@$(MAKE) -C pascal quality
 
 clean: ## Remove build artifacts
 	@$(MAKE) -C cpp clean
 	@$(MAKE) -C go clean
+	@$(MAKE) -C pascal clean
