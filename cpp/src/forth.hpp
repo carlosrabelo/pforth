@@ -62,6 +62,12 @@ public:
     void word_cmove();  // CMOVE
     void word_cmover(); // CMOVE>
 
+    // Spec 003.1 Basic Stack Manipulation Words
+    void word_dup();  // DUP
+    void word_drop(); // DROP
+    void word_swap(); // SWAP
+    void word_over(); // OVER
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();
