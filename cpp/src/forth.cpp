@@ -300,6 +300,21 @@ void Forth::word_2over() {
     push_ds(b);
 }
 
+void Forth::word_to_r() {
+    Cell val = pop_ds();
+    push_rs(val);
+}
+
+void Forth::word_r_from() {
+    Cell val = pop_rs();
+    push_ds(val);
+}
+
+void Forth::word_r_fetch() {
+    Cell val = peek_rs();
+    push_ds(val);
+}
+
 void Forth::key() {
     char c = 0;
     if (in && in->get(c)) {

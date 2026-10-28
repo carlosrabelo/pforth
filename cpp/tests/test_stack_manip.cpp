@@ -207,4 +207,35 @@ TEST_CASE("Stack Manip - 2SWAP and 2OVER", "[stack]") {
     REQUIRE_THROWS_WITH(f.word_2over(), "DATA STACK UNDERFLOW");
 }
 
+TEST_CASE("Stack Manip - Return stack transfer words (>R, R>, R@)", "[stack]") {
+    pforth::Forth f;
+
+    // >R ( n -- ) ( R: -- n )
+    f.push_ds(777);
+    f.word_to_r();
+    REQUIRE(f.ds.empty());
+    REQUIRE(f.rs.size() == 1);
+    REQUIRE(f.peek_rs() == 777);
+
+    // R@ ( -- n ) ( R: n -- n )
+    f.word_r_fetch();
+    REQUIRE(f.ds.size() == 1);
+    REQUIRE(f.pop_ds() == 777);
+    REQUIRE(f.rs.size() == 1); // RS unchanged
+
+    // R> ( -- n ) ( R: n -- )
+    f.word_r_from();
+    REQUIRE(f.ds.size() == 1);
+    REQUIRE(f.pop_ds() == 777);
+    REQUIRE(f.rs.empty());
+
+    // >R underflow on empty DS
+    REQUIRE_THROWS_WITH(f.word_to_r(), "DATA STACK UNDERFLOW");
+
+    // R> and R@ underflow on empty RS
+    REQUIRE_THROWS_WITH(f.word_r_from(), "RETURN STACK UNDERFLOW");
+    REQUIRE_THROWS_WITH(f.word_r_fetch(), "RETURN STACK UNDERFLOW");
+}
+
+
 

@@ -81,6 +81,11 @@ public:
     void word_2swap(); // 2SWAP
     void word_2over(); // 2OVER
 
+    // Spec 003.4 Return Stack Transfer Words
+    void word_to_r();    // >R
+    void word_r_from();  // R>
+    void word_r_fetch(); // R@
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();
