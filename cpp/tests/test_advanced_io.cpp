@@ -1,5 +1,6 @@
 #include "catch.hpp"
 #include "forth.hpp"
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 
@@ -140,4 +141,54 @@ TEST_CASE("Advanced I/O - Dynamic evaluation and file inclusion (EVALUATE, INCLU
     REQUIRE_THROWS_WITH(f.interpret_line("INCLUDE nonexistent_file_xyz.fs"), "CANNOT OPEN: nonexistent_file_xyz.fs");
 
     std::remove(test_path.c_str());
+}
+
+TEST_CASE("Advanced I/O - Module dependency resolver (#REQUIRE)", "[advanced_io]") {
+    std::ostringstream out;
+    std::istringstream in;
+    pforth::Forth f(&in, &out);
+
+    std::filesystem::create_directories("libs");
+    std::string mod_path = "libs/my_module.fs";
+    {
+        std::ofstream mod(mod_path);
+        mod << "\\ my_module.fs\n";
+        mod << "VARIABLE LOAD_COUNT\n";
+        mod << "1 LOAD_COUNT +!\n";
+        mod << ": TRIPLE 3 * ;\n";
+    }
+
+    // First #REQUIRE loads the module
+    f.interpret_line("#REQUIRE my_module");
+    f.interpret_line("7 TRIPLE");
+    REQUIRE(f.pop_ds() == 21);
+
+    f.interpret_line("LOAD_COUNT @");
+    REQUIRE(f.pop_ds() == 1);
+
+    // Duplicate #REQUIRE is deduplicated and not re-executed
+    f.interpret_line("#REQUIRE MY_MODULE");
+    f.interpret_line("LOAD_COUNT @");
+    REQUIRE(f.pop_ds() == 1);
+
+    // Directive in file: line starting with #REQUIRE
+    std::string req_file = "bin/test_req.fs";
+    {
+        std::ofstream rfile(req_file);
+        rfile << "#REQUIRE my_module\n";
+        rfile << "5 TRIPLE\n";
+    }
+    f.interpret_line("INCLUDE bin/test_req.fs");
+    REQUIRE(f.pop_ds() == 15);
+    // LOAD_COUNT still 1 because deduplicated!
+    f.interpret_line("LOAD_COUNT @");
+    REQUIRE(f.pop_ds() == 1);
+
+    // Non-existent module throws error
+    REQUIRE_THROWS_WITH(f.interpret_line("#REQUIRE NONEXISTENT"), "MODULE NOT FOUND: NONEXISTENT");
+
+    std::filesystem::remove(mod_path);
+    std::filesystem::remove(req_file);
+    std::error_code ec;
+    std::filesystem::remove("libs", ec);
 }

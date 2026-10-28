@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cctype>
 #include <csignal>
+#include <filesystem>
 #include <fstream>
 
 namespace pforth {
@@ -1639,8 +1640,60 @@ void Forth::word_include() {
     load_file(token);
 }
 
+static std::string find_lib_path(const std::string& name) {
+    std::string lower;
+    for (char c : name) {
+        lower += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    if (!lower.ends_with(".fs")) {
+        lower += ".fs";
+    }
+
+    std::error_code ec;
+    std::filesystem::path dir = std::filesystem::current_path(ec);
+    if (ec) {
+        return "";
+    }
+
+    std::vector<std::string> search_dirs = {"libs", "demos"};
+    while (true) {
+        for (const auto& sd : search_dirs) {
+            std::filesystem::path candidate = dir / sd / lower;
+            if (std::filesystem::exists(candidate, ec)) {
+                return candidate.string();
+            }
+        }
+        if (!dir.has_parent_path() || dir.parent_path() == dir) {
+            break;
+        }
+        dir = dir.parent_path();
+    }
+    return "";
+}
+
 void Forth::require_module(const std::string& module_name) {
-    (void)module_name;
+    std::string upper;
+    for (char c : module_name) {
+        upper += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    }
+    if (loaded_modules.find(upper) != loaded_modules.end()) {
+        return;
+    }
+
+    std::string path = find_lib_path(module_name);
+    if (path.empty()) {
+        throw std::runtime_error("MODULE NOT FOUND: " + module_name);
+    }
+    loaded_modules.insert(upper);
+    load_file(path);
+}
+
+void Forth::word_require() {
+    std::string token;
+    if (!parse_word(token)) {
+        throw std::runtime_error("MODULE NAME EXPECTED");
+    }
+    require_module(token);
 }
 
 void Forth::init_primitives() {
@@ -1798,6 +1851,7 @@ void Forth::init_primitives() {
     define_primitive("EVALUATE", [](Forth* f) { f->word_evaluate(); });
     define_primitive("INCLUDED", [](Forth* f) { f->word_included(); });
     define_primitive("INCLUDE", [](Forth* f) { f->word_include(); });
+    define_primitive("#REQUIRE", [](Forth* f) { f->word_require(); });
 }
 
 } // namespace pforth
