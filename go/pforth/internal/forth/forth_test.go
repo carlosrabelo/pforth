@@ -1662,3 +1662,121 @@ func TestDefiningWords(t *testing.T) {
 		f.WordConstant()
 	}()
 }
+
+func TestDelimitedWordScannerAndNumericParser(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+
+	// BASE ( -- addr )
+	f.WordBase()
+	if len(f.DS) != 1 || f.DSPop() != Cell(BaseAddr) {
+		t.Fatalf("BASE expected %d", BaseAddr)
+	}
+	if f.GetBase() != 10 {
+		t.Fatalf("default BASE expected 10, got %d", f.GetBase())
+	}
+	f.SetBase(16)
+	if f.GetBase() != 16 {
+		t.Fatalf("updated BASE expected 16, got %d", f.GetBase())
+	}
+	f.SetBase(10)
+
+	// ParseNumber
+	checkNum := func(token string, expected Cell) {
+		val, ok := f.ParseNumber(token)
+		if !ok || val != expected {
+			t.Fatalf("ParseNumber(%q) expected (%d, true), got (%d, %v)", token, expected, val, ok)
+		}
+	}
+	checkNum("123", 123)
+	checkNum("-45", -45)
+	checkNum("+50", 50)
+	checkNum("$1F", 31)
+	checkNum("-$10", -16)
+	checkNum("%1010", 10)
+	checkNum("-%11", -3)
+
+	f.SetBase(16)
+	checkNum("FF", 255)
+	f.SetBase(10)
+
+	// Invalid numbers
+	checkInvalid := func(token string) {
+		_, ok := f.ParseNumber(token)
+		if ok {
+			t.Fatalf("ParseNumber(%q) expected false, got true", token)
+		}
+	}
+	checkInvalid("12A")
+	checkInvalid("XYZ")
+	checkInvalid("$")
+	checkInvalid("-")
+	checkInvalid("")
+
+	// WORD ( delim -- addr )
+	f.SetLine("   HELLO   WORLD  ")
+	f.DSPush(Cell(' '))
+	f.WordWord()
+	addr1 := int(f.DSPop())
+	len1 := int(f.CFetch(addr1))
+	if len1 != 5 {
+		t.Fatalf("WORD HELLO length expected 5, got %d", len1)
+	}
+	var s1 strings.Builder
+	for i := 0; i < len1; i++ {
+		s1.WriteByte(f.CFetch(addr1 + 1 + i))
+	}
+	if s1.String() != "HELLO" {
+		t.Fatalf("WORD HELLO expected 'HELLO', got %q", s1.String())
+	}
+
+	f.DSPush(Cell(' '))
+	f.WordWord()
+	addr2 := int(f.DSPop())
+	len2 := int(f.CFetch(addr2))
+	if len2 != 5 {
+		t.Fatalf("WORD WORLD length expected 5, got %d", len2)
+	}
+	var s2 strings.Builder
+	for i := 0; i < len2; i++ {
+		s2.WriteByte(f.CFetch(addr2 + 1 + i))
+	}
+	if s2.String() != "WORLD" {
+		t.Fatalf("WORD WORLD expected 'WORLD', got %q", s2.String())
+	}
+
+	// NUMBER ( addr -- n flag )
+	f.DSPush(Cell(addr1)) // "HELLO" is not a number
+	f.WordNumber()
+	flag1 := f.DSPop()
+	_ = f.DSPop()
+	if flag1 != 0 {
+		t.Fatal("NUMBER HELLO should fail")
+	}
+
+	// Create counted string for "123" at 3500
+	f.CStore(3500, 3)
+	f.CStore(3501, '1')
+	f.CStore(3502, '2')
+	f.CStore(3503, '3')
+	f.DSPush(3500)
+	f.WordNumber()
+	flag2 := f.DSPop()
+	val2 := f.DSPop()
+	if flag2 != -1 || val2 != 123 {
+		t.Fatalf("NUMBER '123' expected (123, -1), got (%d, %d)", val2, flag2)
+	}
+
+	// Underflow tests
+	underflow := func(fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected underflow panic")
+			}
+		}()
+		fn()
+	}
+
+	underflow(func() { f.WordWord() })
+	underflow(func() { f.WordNumber() })
+}
