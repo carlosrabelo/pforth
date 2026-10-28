@@ -53,7 +53,7 @@ TEST_CASE("Advanced I/O - Numeric output and stack inspector (., U., .S, PAGE)",
 
     // PAGE screen clear
     f.interpret_line("PAGE");
-    REQUIRE(out.str() == "\033[2J\033[H");
+    REQUIRE((out.str() == "\014" || out.str() == "\033[2J\033[H"));
 }
 
 TEST_CASE("Advanced I/O - String literals and output (.\", S\", comments)", "[advanced_io]") {

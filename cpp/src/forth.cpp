@@ -4,6 +4,7 @@
 #include <csignal>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 
 namespace pforth {
 
@@ -22,6 +23,7 @@ Forth::Forth(std::istream* input, std::ostream* output)
     dp = 1024;
     store_cell(1004, 10);
     init_primitives();
+    require_module("CORE");
 }
 
 Forth::~Forth() {
@@ -1579,17 +1581,14 @@ void Forth::word_evaluate() {
     in_ptr = saved_in_ptr;
 }
 
-void Forth::load_file(const std::string& path) {
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        throw std::runtime_error("CANNOT OPEN: " + path);
-    }
+void Forth::load_system(const std::string& data) {
     std::string saved_tib = tib;
     size_t saved_in_ptr = in_ptr;
 
+    std::istringstream stream(data);
     std::string line;
     try {
-        while (std::getline(file, line)) {
+        while (std::getline(stream, line)) {
             check_interrupt();
             std::string trimmed = line;
             size_t start = trimmed.find_first_not_of(" \t\r\n");
@@ -1620,6 +1619,16 @@ void Forth::load_file(const std::string& path) {
     }
     tib = saved_tib;
     in_ptr = saved_in_ptr;
+}
+
+void Forth::load_file(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        throw std::runtime_error("CANNOT OPEN: " + path);
+    }
+    std::string content((std::istreambuf_iterator<char>(file)),
+                        std::istreambuf_iterator<char>());
+    load_system(content);
 }
 
 void Forth::word_included() {
@@ -1671,6 +1680,55 @@ static std::string find_lib_path(const std::string& name) {
     return "";
 }
 
+static const char* CORE_FS_SOURCE = R"(\ pForth core library
+\ composite words defined in Forth from kernel primitives
+
+\ Stack (depends only on kernel primitives)
+: NIP    SWAP DROP ;
+: TUCK   SWAP OVER ;
+: ROT    >R SWAP R> SWAP ;
+: -ROT   SWAP >R SWAP R> ;
+: 2DUP   OVER OVER ;
+: 2DROP  DROP DROP ;
+
+\ Division (depends on NIP, DROP from stack section)
+: /      /MOD NIP ;
+: MOD    /MOD DROP ;
+
+\ Comparison basics (depends on kernel primitives)
+: 0=     0 = ;
+: <>     = 0= ;
+: 0<>    0 <> ;
+: 0<     0 < ;
+: 0>     0 > ;
+: <=     OVER OVER < ROT ROT = OR ;
+: >=     OVER OVER > ROT ROT = OR ;
+
+\ Arithmetic compounds (depends on kernel primitives)
+: 1+     1 + ;
+: 1-     1 - ;
+: 2+     2 + ;
+: 2-     2 - ;
+: 2*     2 * ;
+: 2/     2 / ;
+: NEGATE 0 SWAP - ;
+: +!     TUCK @ + SWAP ! ;
+
+\ Extended arithmetic (depends on comparison and 2DUP above)
+: ABS    DUP 0< IF NEGATE THEN ;
+: MIN    2DUP < IF DROP ELSE SWAP DROP THEN ;
+: MAX    2DUP > IF DROP ELSE SWAP DROP THEN ;
+
+\ I/O (depends only on kernel primitives)
+: SPACE  32 EMIT ;
+: SPACES 0 MAX 0 DO SPACE LOOP ;
+: ?      @ . ;
+: PAGE   12 EMIT ;
+
+\ Misc
+: ERASE  0 FILL ;
+)";
+
 void Forth::require_module(const std::string& module_name) {
     std::string upper;
     for (char c : module_name) {
@@ -1681,11 +1739,19 @@ void Forth::require_module(const std::string& module_name) {
     }
 
     std::string path = find_lib_path(module_name);
-    if (path.empty()) {
-        throw std::runtime_error("MODULE NOT FOUND: " + module_name);
+    if (!path.empty()) {
+        loaded_modules.insert(upper);
+        load_file(path);
+        return;
     }
-    loaded_modules.insert(upper);
-    load_file(path);
+
+    if (upper == "CORE") {
+        loaded_modules.insert(upper);
+        load_system(CORE_FS_SOURCE);
+        return;
+    }
+
+    throw std::runtime_error("MODULE NOT FOUND: " + module_name);
 }
 
 void Forth::word_require() {
@@ -1702,12 +1768,6 @@ void Forth::init_primitives() {
     define_primitive("SWAP", [](Forth* f) { f->word_swap(); });
     define_primitive("OVER", [](Forth* f) { f->word_over(); });
     define_primitive("?DUP", [](Forth* f) { f->word_qdup(); });
-    define_primitive("ROT", [](Forth* f) { f->word_rot(); });
-    define_primitive("-ROT", [](Forth* f) { f->word_nrot(); });
-    define_primitive("NIP", [](Forth* f) { f->word_nip(); });
-    define_primitive("TUCK", [](Forth* f) { f->word_tuck(); });
-    define_primitive("2DUP", [](Forth* f) { f->word_2dup(); });
-    define_primitive("2DROP", [](Forth* f) { f->word_2drop(); });
     define_primitive("2SWAP", [](Forth* f) { f->word_2swap(); });
     define_primitive("2OVER", [](Forth* f) { f->word_2over(); });
 
@@ -1719,11 +1779,8 @@ void Forth::init_primitives() {
     define_primitive("!", [](Forth* f) { f->word_store(); });
     define_primitive("C@", [](Forth* f) { f->word_c_fetch(); });
     define_primitive("C!", [](Forth* f) { f->word_c_store(); });
-    define_primitive("+!", [](Forth* f) { f->word_plus_store(); });
-    define_primitive("?", [](Forth* f) { f->word_question(); });
 
     define_primitive("FILL", [](Forth* f) { f->word_fill(); });
-    define_primitive("ERASE", [](Forth* f) { f->word_erase(); });
     define_primitive("CMOVE", [](Forth* f) { f->word_cmove(); });
     define_primitive("CMOVE>", [](Forth* f) { f->word_cmover(); });
 
@@ -1731,19 +1788,6 @@ void Forth::init_primitives() {
     define_primitive("-", [](Forth* f) { f->word_minus(); });
     define_primitive("*", [](Forth* f) { f->word_multiply(); });
     define_primitive("/MOD", [](Forth* f) { f->word_slash_mod(); });
-    define_primitive("/", [](Forth* f) { f->word_slash(); });
-    define_primitive("MOD", [](Forth* f) { f->word_mod(); });
-    define_primitive("NEGATE", [](Forth* f) { f->word_negate(); });
-
-    define_primitive("1+", [](Forth* f) { f->word_one_plus(); });
-    define_primitive("1-", [](Forth* f) { f->word_one_minus(); });
-    define_primitive("2+", [](Forth* f) { f->word_two_plus(); });
-    define_primitive("2-", [](Forth* f) { f->word_two_minus(); });
-    define_primitive("2*", [](Forth* f) { f->word_two_star(); });
-    define_primitive("2/", [](Forth* f) { f->word_two_slash(); });
-    define_primitive("ABS", [](Forth* f) { f->word_abs(); });
-    define_primitive("MIN", [](Forth* f) { f->word_min(); });
-    define_primitive("MAX", [](Forth* f) { f->word_max(); });
 
     define_primitive("AND", [](Forth* f) { f->word_and(); });
     define_primitive("OR", [](Forth* f) { f->word_or(); });
@@ -1751,15 +1795,8 @@ void Forth::init_primitives() {
     define_primitive("INVERT", [](Forth* f) { f->word_invert(); });
 
     define_primitive("=", [](Forth* f) { f->word_equals(); });
-    define_primitive("<>", [](Forth* f) { f->word_not_equals(); });
     define_primitive("<", [](Forth* f) { f->word_less(); });
     define_primitive(">", [](Forth* f) { f->word_greater(); });
-    define_primitive("<=", [](Forth* f) { f->word_less_equal(); });
-    define_primitive(">=", [](Forth* f) { f->word_greater_equal(); });
-    define_primitive("0=", [](Forth* f) { f->word_zero_equals(); });
-    define_primitive("0<>", [](Forth* f) { f->word_zero_not_equals(); });
-    define_primitive("0<", [](Forth* f) { f->word_zero_less(); });
-    define_primitive("0>", [](Forth* f) { f->word_zero_greater(); });
     define_primitive("U<", [](Forth* f) { f->word_u_less(); });
     define_primitive("U>", [](Forth* f) { f->word_u_greater(); });
     define_primitive("U<=", [](Forth* f) { f->word_u_less_equal(); });
@@ -1768,9 +1805,10 @@ void Forth::init_primitives() {
     define_primitive("KEY", [](Forth* f) { f->key(); });
     define_primitive("EMIT", [](Forth* f) { f->emit(); });
     define_primitive("CR", [](Forth* f) { f->cr(); });
-    define_primitive("SPACE", [](Forth* f) { f->space(); });
-    define_primitive("SPACES", [](Forth* f) { f->spaces(); });
     define_primitive("TYPE", [](Forth* f) { f->type(); });
+    define_primitive(".", [](Forth* f) { f->word_dot(); });
+    define_primitive("U.", [](Forth* f) { f->word_u_dot(); });
+    define_primitive(".S", [](Forth* f) { f->word_dot_s(); });
     define_primitive("BYE", [](Forth* f) { f->bye(); });
     define_primitive("EXPECT", [](Forth* f) { f->expect(); });
     define_primitive("SPAN", [](Forth* f) { f->span(); });
@@ -1837,11 +1875,6 @@ void Forth::init_primitives() {
     define_immediate("LOOP", [](Forth* f) { f->word_loop(); });
     define_immediate("+LOOP", [](Forth* f) { f->word_plus_loop(); });
     define_immediate("LEAVE", [](Forth* f) { f->word_leave(); });
-
-    define_primitive(".", [](Forth* f) { f->word_dot(); });
-    define_primitive("U.", [](Forth* f) { f->word_u_dot(); });
-    define_primitive(".S", [](Forth* f) { f->word_dot_s(); });
-    define_primitive("PAGE", [](Forth* f) { f->word_page(); });
 
     define_immediate(".\"", [](Forth* f) { f->word_dot_string(); });
     define_immediate("S\"", [](Forth* f) { f->word_s_string(); });

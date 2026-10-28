@@ -269,6 +269,7 @@ public:
 
     // Spec 008.3 String Evaluation and File Loading
     void load_file(const std::string& path);
+    void load_system(const std::string& data);
     void require_module(const std::string& module_name);
     void word_evaluate(); // EVALUATE
     void word_included(); // INCLUDED
