@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"sync/atomic"
+	"syscall"
 )
 
 const (
@@ -24,6 +27,7 @@ type Forth struct {
 	Latest      int
 	DP          int
 	Base        int
+	State       bool
 
 	TIB []byte
 	IN  int
@@ -280,15 +284,97 @@ func (f *Forth) LoadSystem(data string) {
 	}
 }
 
-// QUIT runs the outer interpreter loop until EOF or BYE.
-func (f *Forth) QUIT() {
-	if f.bufIn == nil {
+// EmitStr writes a string to output.
+func (f *Forth) EmitStr(s string) {
+	if f.Output != nil {
+		f.Output.Write([]byte(s))
+	}
+}
+
+// Abort resets stacks, execution state, and returns to REPL.
+func (f *Forth) Abort() {
+	atomic.StoreInt32(&f.Interrupted, 0)
+	f.State = false
+	f.DS = f.DS[:0]
+	f.RS = f.RS[:0]
+	f.IN = len(f.TIB)
+}
+
+// CheckInterrupt verifies if execution was halted by SIGINT.
+func (f *Forth) CheckInterrupt() {
+	if atomic.LoadInt32(&f.Interrupted) != 0 {
+		atomic.StoreInt32(&f.Interrupted, 0)
+		f.Abort()
+		forthError("INTERRUPTED")
+	}
+}
+
+// InterpretLine sets the line into TIB and executes it.
+func (f *Forth) InterpretLine(line string) {
+	f.SetLine(line)
+}
+
+// replStep reads and processes a single line in the REPL.
+func (f *Forth) replStep() {
+	defer func() {
+		if r := recover(); r != nil {
+			msg := fmt.Sprint(r)
+			if _, ok := r.(*ForthError); ok {
+				f.EmitStr(msg)
+				f.EmitStr("\n")
+			} else {
+				f.EmitStr("PANIC: ")
+				f.EmitStr(msg)
+				f.EmitStr("\n")
+			}
+			f.Abort()
+			f.EmitStr(" ok\n")
+		}
+	}()
+
+	line, err := f.ReadLine()
+	if err != nil {
+		f.Running = false
 		return
 	}
-	for f.Running {
-		_, err := f.bufIn.ReadString('\n')
-		if err != nil {
-			break
+
+	if atomic.LoadInt32(&f.Interrupted) != 0 {
+		atomic.StoreInt32(&f.Interrupted, 0)
+		f.Abort()
+		f.EmitStr("\n INTERRUPTED\n ok\n")
+		return
+	}
+
+	f.InterpretLine(line)
+	f.EmitStr(" ok\n")
+}
+
+// QUIT runs the outer interpreter loop until EOF or BYE.
+func (f *Forth) QUIT() {
+	f.State = false
+	f.DS = f.DS[:0]
+	f.RS = f.RS[:0]
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT)
+	quit := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-sigChan:
+				atomic.StoreInt32(&f.Interrupted, 1)
+			case <-quit:
+				return
+			}
 		}
+	}()
+	defer func() {
+		signal.Stop(sigChan)
+		close(quit)
+	}()
+
+	f.EmitStr(" ok\n")
+	for f.Running {
+		f.replStep()
 	}
 }
