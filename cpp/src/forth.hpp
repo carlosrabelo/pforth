@@ -42,6 +42,12 @@ public:
     Cell peek_rs() const;
     void depth();
 
+    // Spec 002.2 64KB Linear RAM Memory Model
+    uint8_t c_fetch(uint32_t addr) const;
+    void c_store(uint32_t addr, uint8_t val);
+    Cell fetch_cell(uint32_t addr) const;
+    void store_cell(uint32_t addr, Cell val);
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();

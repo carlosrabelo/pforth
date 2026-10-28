@@ -90,6 +90,37 @@ void Forth::depth() {
     push_ds(static_cast<Cell>(ds.size()));
 }
 
+uint8_t Forth::c_fetch(uint32_t addr) const {
+    if (addr >= memory.size()) {
+        throw std::runtime_error("OUT OF MEMORY RANGE");
+    }
+    return memory[addr];
+}
+
+void Forth::c_store(uint32_t addr, uint8_t val) {
+    if (addr >= memory.size()) {
+        throw std::runtime_error("OUT OF MEMORY RANGE");
+    }
+    memory[addr] = val;
+}
+
+Cell Forth::fetch_cell(uint32_t addr) const {
+    if (addr + 1 >= memory.size()) {
+        throw std::runtime_error("OUT OF MEMORY RANGE");
+    }
+    uint16_t low = memory[addr];
+    uint16_t high = memory[addr + 1];
+    return static_cast<Cell>(low | (high << 8));
+}
+
+void Forth::store_cell(uint32_t addr, Cell val) {
+    if (addr + 1 >= memory.size()) {
+        throw std::runtime_error("OUT OF MEMORY RANGE");
+    }
+    memory[addr] = static_cast<uint8_t>(val & 0xFF);
+    memory[addr + 1] = static_cast<uint8_t>((val >> 8) & 0xFF);
+}
+
 void Forth::key() {
     char c = 0;
     if (in && in->get(c)) {
@@ -169,17 +200,14 @@ void Forth::expect() {
 
     uint16_t uaddr = static_cast<uint16_t>(addr);
     for (size_t i = 0; i < count; ++i) {
-        if (static_cast<size_t>(uaddr) + i < memory.size()) {
-            memory[uaddr + i] = static_cast<uint8_t>(line[i]);
-        }
+        c_store(static_cast<uint32_t>(uaddr) + i, static_cast<uint8_t>(line[i]));
     }
     if (static_cast<size_t>(uaddr) + count < memory.size()) {
-        memory[uaddr + count] = 0;
+        c_store(static_cast<uint32_t>(uaddr) + count, 0);
     }
 
     // SPAN variable is stored at address 1000 (little-endian 16-bit cell)
-    memory[1000] = static_cast<uint8_t>(count & 0xFF);
-    memory[1001] = static_cast<uint8_t>((count >> 8) & 0xFF);
+    store_cell(1000, static_cast<Cell>(count));
 }
 
 void Forth::span() {
