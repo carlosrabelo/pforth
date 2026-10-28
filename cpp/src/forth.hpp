@@ -258,6 +258,13 @@ public:
     void word_dot_s(); // .S
     void word_page();  // PAGE
 
+    // Spec 008.2 String Literals and Output
+    std::string parse_string();
+    void word_dot_string(); // ."
+    void word_s_string();   // S"
+    void word_paren();      // (
+    void word_backslash();  // '\'
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();
