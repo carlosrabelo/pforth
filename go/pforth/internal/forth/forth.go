@@ -230,6 +230,24 @@ func (f *Forth) Word2Over() {
 	f.DSPush(b)
 }
 
+// WordToR moves cell from data stack to return stack: >R ( n -- ) ( R: -- n )
+func (f *Forth) WordToR() {
+	val := f.DSPop()
+	f.RSPush(val)
+}
+
+// WordRFrom moves cell from return stack to data stack: R> ( -- n ) ( R: n -- )
+func (f *Forth) WordRFrom() {
+	val := f.RSPop()
+	f.DSPush(val)
+}
+
+// WordRFetch copies top of return stack onto data stack: R@ ( -- n ) ( R: n -- n )
+func (f *Forth) WordRFetch() {
+	val := f.RSPeek()
+	f.DSPush(val)
+}
+
 // CFetch reads a byte from 64KB memory.
 func (f *Forth) CFetch(addr int) byte {
 	if addr < 0 || addr >= len(f.Memory) {
