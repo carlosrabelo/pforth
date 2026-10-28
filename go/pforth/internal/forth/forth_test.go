@@ -2708,3 +2708,150 @@ func TestCoreLibraryBootstrap(t *testing.T) {
 		t.Fatal("ERASE failed")
 	}
 }
+
+func TestDemoHelloWorld(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+	f.InitPrimitives()
+	f.RequireModule("CORE")
+
+	helloSrc := ": HELLO\n  .\" Hello, world!\" CR\n;\nHELLO\n"
+	f.LoadSystem(helloSrc)
+	if out.String() != "Hello, world!\n" {
+		t.Fatalf("expected 'Hello, world!\\n', got %q", out.String())
+	}
+}
+
+func TestDemoFactorial(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+	f.InitPrimitives()
+	f.RequireModule("CORE")
+
+	factorialSrc := ": FACTORIAL ( n -- n! )\n  DUP 1 >\n  IF\n    DUP 1 - RECURSE *\n  THEN\n;\n5 FACTORIAL . CR\n7 FACTORIAL . CR\n"
+	f.LoadSystem(factorialSrc)
+	if out.String() != "120 \n5040 \n" {
+		t.Fatalf("expected '120 \\n5040 \\n', got %q", out.String())
+	}
+}
+
+func TestDemoFibonacci(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+	f.InitPrimitives()
+	f.RequireModule("CORE")
+
+	fibSrc := ": FIB ( n -- fib[n] )\n  0 1 ROT 0 DO\n    TUCK +\n  LOOP DROP\n;\n10 FIB . CR\n"
+	f.LoadSystem(fibSrc)
+	if out.String() != "55 \n" {
+		t.Fatalf("expected '55 \\n', got %q", out.String())
+	}
+}
+
+func TestDemoBubbleSort(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+	f.InitPrimitives()
+	f.RequireModule("CORE")
+
+	bubbleSrc := `CREATE DATA 9 C, 8 C, 7 C, 6 C, 5 C, 4 C, 3 C, 2 C, 1 C, 0 C,
+: PRINT
+  10 0 DO DATA I + C@ . LOOP CR
+;
+: BUBBLE ( addr len -- )
+  DUP 1 DO
+    DUP I - 0 DO
+      OVER I + DUP 1+
+      OVER C@ OVER C@
+      2DUP > IF
+        SWAP ROT C! SWAP C!
+      ELSE
+        2DROP 2DROP
+      THEN
+    LOOP
+  LOOP
+  2DROP
+;
+DATA 10 BUBBLE
+PRINT
+`
+	f.LoadSystem(bubbleSrc)
+	if out.String() != "0 1 2 3 4 5 6 7 8 9 \n" {
+		t.Fatalf("expected '0 1 2 3 4 5 6 7 8 9 \\n', got %q", out.String())
+	}
+}
+
+func TestDemoSieve(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+	f.InitPrimitives()
+	f.RequireModule("CORE")
+
+	sieveSrc := `8190 CONSTANT SIZE
+VARIABLE FLAGS SIZE ALLOT
+: SETUP-FLAGS
+  SIZE 0 DO
+    1 FLAGS I + C!
+  LOOP ;
+: SIEVE
+  SETUP-FLAGS
+  0
+  SIZE 0 DO
+    FLAGS I + C@ IF
+      I I + 3 +
+      DUP I +
+      BEGIN
+        DUP SIZE <
+      WHILE
+        DUP FLAGS + 0 SWAP C!
+        OVER +
+      REPEAT
+      DROP DROP 1 +
+    THEN
+  LOOP
+  . CR
+;
+SIEVE
+`
+	f.LoadSystem(sieveSrc)
+	if out.String() != "1899 \n" {
+		t.Fatalf("expected '1899 \\n', got %q", out.String())
+	}
+}
+
+func TestDemoTowerOfHanoi(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+	f.InitPrimitives()
+	f.RequireModule("CORE")
+
+	hanoiSrc := `VARIABLE SRC
+VARIABLE DEST
+VARIABLE AUX
+: HANOI ( n src dest aux -- )
+  AUX ! DEST ! SRC !
+  DUP IF
+    SRC @ DEST @ AUX @
+    >R >R >R
+    DUP 1- SRC @ AUX @ DEST @ RECURSE
+    R> SRC ! R> DEST ! R> AUX !
+    ." Move " SRC @ . ." -> " DEST @ . CR
+    1- AUX @ DEST @ SRC @ RECURSE
+  ELSE
+    DROP
+  THEN
+;
+3 1 3 2 HANOI
+`
+	f.LoadSystem(hanoiSrc)
+	expected := "Move 1 -> 3 \n" +
+		"Move 1 -> 2 \n" +
+		"Move 3 -> 2 \n" +
+		"Move 1 -> 3 \n" +
+		"Move 2 -> 1 \n" +
+		"Move 2 -> 3 \n" +
+		"Move 1 -> 3 \n"
+	if out.String() != expected {
+		t.Fatalf("expected %q, got %q", expected, out.String())
+	}
+}
