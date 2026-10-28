@@ -86,6 +86,15 @@ public:
     void word_r_from();  // R>
     void word_r_fetch(); // R@
 
+    // Spec 004.1 Basic Arithmetic and Division Primitives
+    void word_plus();      // +
+    void word_minus();     // -
+    void word_multiply();  // *
+    void word_slash_mod(); // /MOD
+    void word_slash();     // /
+    void word_mod();       // MOD
+    void word_negate();    // NEGATE
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();
