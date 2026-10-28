@@ -75,6 +75,12 @@ public:
     void word_nip();   // NIP
     void word_tuck();  // TUCK
 
+    // Spec 003.3 Double Cell Stack Manipulation Words
+    void word_2dup();  // 2DUP
+    void word_2drop(); // 2DROP
+    void word_2swap(); // 2SWAP
+    void word_2over(); // 2OVER
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();
