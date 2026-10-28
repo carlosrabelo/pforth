@@ -117,6 +117,33 @@ func (f *Forth) WordDepth() {
 	f.DSPush(Cell(len(f.DS)))
 }
 
+// WordDup duplicates top of stack: DUP ( n -- n n )
+func (f *Forth) WordDup() {
+	f.DSPush(f.DSPeek())
+}
+
+// WordDrop removes top of stack: DROP ( n -- )
+func (f *Forth) WordDrop() {
+	_ = f.DSPop()
+}
+
+// WordSwap exchanges top two stack items: SWAP ( a b -- b a )
+func (f *Forth) WordSwap() {
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(b)
+	f.DSPush(a)
+}
+
+// WordOver copies second item to top of stack: OVER ( a b -- a b a )
+func (f *Forth) WordOver() {
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(a)
+	f.DSPush(b)
+	f.DSPush(a)
+}
+
 // CFetch reads a byte from 64KB memory.
 func (f *Forth) CFetch(addr int) byte {
 	if addr < 0 || addr >= len(f.Memory) {
