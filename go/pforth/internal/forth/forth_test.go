@@ -1827,3 +1827,82 @@ func TestOuterInterpreterLoop(t *testing.T) {
 		t.Fatal("QUIT REPL loop execution failed")
 	}
 }
+
+func TestCompilerStateAndLiteralCompilation(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+
+	// STATE initially 0
+	f.WordState()
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatal("STATE initially expected 0")
+	}
+
+	// ] sets STATE to -1
+	f.WordRightBracket()
+	f.WordState()
+	if len(f.DS) != 1 || f.DSPop() != -1 {
+		t.Fatal("] expected STATE = -1")
+	}
+
+	// [ sets STATE to 0
+	f.WordLeftBracket()
+	f.WordState()
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatal("[ expected STATE = 0")
+	}
+
+	// LITERAL ( n -- )
+	f.CompileList = f.CompileList[:0]
+	f.DSPush(42)
+	f.WordLiteral()
+	litXT, ok := f.FindXT("LIT")
+	if !ok {
+		t.Fatal("LIT should be defined after LITERAL")
+	}
+	if len(f.CompileList) != 2 || f.CompileList[0] != Cell(litXT) || f.CompileList[1] != 42 {
+		t.Fatalf("LITERAL compilation mismatch: %v", f.CompileList)
+	}
+
+	// LIT runtime execution
+	f.CurrentBody = []Cell{999}
+	f.IP = 0
+	f.WordLIT()
+	if len(f.DS) != 1 || f.DSPop() != 999 || f.IP != 1 {
+		t.Fatal("WordLIT runtime failed")
+	}
+
+	// COMPILE
+	wFoo := f.DefinePrimitive("FOO", func(f *Forth) {})
+	xtFoo, _ := f.FindXT("FOO")
+	f.CompileList = f.CompileList[:0]
+	f.SetLine("FOO")
+	f.WordCompile()
+	if len(f.CompileList) != 1 || f.CompileList[0] != Cell(xtFoo) {
+		t.Fatal("COMPILE failed")
+	}
+	_ = wFoo
+
+	// [COMPILE]
+	wBar := f.DefineImmediate("BAR", func(f *Forth) {})
+	xtBar, _ := f.FindXT("BAR")
+	f.CompileList = f.CompileList[:0]
+	f.SetLine("BAR")
+	f.WordBracketCompile()
+	if len(f.CompileList) != 1 || f.CompileList[0] != Cell(xtBar) {
+		t.Fatal("[COMPILE] failed")
+	}
+	_ = wBar
+
+	// Underflow tests
+	underflow := func(fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected underflow panic")
+			}
+		}()
+		fn()
+	}
+
+	underflow(func() { f.WordLiteral() })
+}
