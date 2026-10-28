@@ -167,3 +167,40 @@ TEST_CASE("Arithmetic - ABS, MIN, and MAX", "[arithmetic]") {
     REQUIRE(f.pop_ds() == -5);
 }
 
+TEST_CASE("Arithmetic - Bitwise logic (AND, OR, XOR, INVERT)", "[arithmetic]") {
+    pforth::Forth f;
+
+    // AND
+    f.push_ds(0x00FF);
+    f.push_ds(0x0F0F);
+    f.word_and();
+    REQUIRE(f.pop_ds() == 0x000F);
+
+    // OR
+    f.push_ds(0x00F0);
+    f.push_ds(0x0F00);
+    f.word_or();
+    REQUIRE(f.pop_ds() == 0x0FF0);
+
+    // XOR
+    f.push_ds(static_cast<pforth::Cell>(0xAAAA));
+    f.push_ds(0x5555);
+    f.word_xor();
+    REQUIRE(f.pop_ds() == -1); // 0xFFFF
+
+    // INVERT
+    f.push_ds(0);
+    f.word_invert();
+    REQUIRE(f.pop_ds() == -1);
+
+    f.push_ds(-1);
+    f.word_invert();
+    REQUIRE(f.pop_ds() == 0);
+
+    // Underflow
+    REQUIRE_THROWS_WITH(f.word_invert(), "DATA STACK UNDERFLOW");
+    f.push_ds(1);
+    REQUIRE_THROWS_WITH(f.word_and(), "DATA STACK UNDERFLOW");
+}
+
+

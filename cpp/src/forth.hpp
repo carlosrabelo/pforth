@@ -106,6 +106,12 @@ public:
     void word_min();       // MIN
     void word_max();       // MAX
 
+    // Spec 004.3 Bitwise Logic Primitives
+    void word_and();    // AND
+    void word_or();     // OR
+    void word_xor();    // XOR
+    void word_invert(); // INVERT
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();
