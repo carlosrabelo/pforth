@@ -17,14 +17,11 @@ int run_cli(const CliArgs& args, std::istream& in, std::ostream& out, std::ostre
     Forth f(&in, &out);
 
     for (const auto& path : args.file_paths) {
-        std::ifstream file(path);
-        if (!file.is_open()) {
-            err << "CANNOT OPEN: " << path << "\n";
+        try {
+            f.load_file(path);
+        } catch (const std::exception& e) {
+            err << e.what() << "\n";
             return 1;
-        }
-        std::string line;
-        while (std::getline(file, line)) {
-            f.interpret_line(line);
         }
     }
 
