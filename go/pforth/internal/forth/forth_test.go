@@ -2547,3 +2547,164 @@ func TestModuleDependencyResolver(t *testing.T) {
 		f.InterpretLine("#REQUIRE NONEXISTENT_MODULE_NAME")
 	})
 }
+
+func TestCoreLibraryBootstrap(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+	f.InitPrimitives()
+	f.RequireModule("CORE")
+
+	// Stack words
+	f.InterpretLine("1 2 NIP")
+	if len(f.DS) != 1 || f.DSPop() != 2 {
+		t.Fatal("NIP failed")
+	}
+
+	f.InterpretLine("1 2 TUCK")
+	if len(f.DS) != 3 || f.DS[0] != 2 || f.DS[1] != 1 || f.DS[2] != 2 {
+		t.Fatalf("TUCK failed, DS: %v", f.DS)
+	}
+	f.DS = f.DS[:0]
+
+	f.InterpretLine("1 2 3 ROT")
+	if len(f.DS) != 3 || f.DS[0] != 2 || f.DS[1] != 3 || f.DS[2] != 1 {
+		t.Fatalf("ROT failed, DS: %v", f.DS)
+	}
+	f.DS = f.DS[:0]
+
+	f.InterpretLine("1 2 3 -ROT")
+	if len(f.DS) != 3 || f.DS[0] != 3 || f.DS[1] != 1 || f.DS[2] != 2 {
+		t.Fatalf("-ROT failed, DS: %v", f.DS)
+	}
+	f.DS = f.DS[:0]
+
+	f.InterpretLine("1 2 2DUP")
+	if len(f.DS) != 4 || f.DS[0] != 1 || f.DS[1] != 2 || f.DS[2] != 1 || f.DS[3] != 2 {
+		t.Fatalf("2DUP failed, DS: %v", f.DS)
+	}
+	f.DS = f.DS[:0]
+
+	f.InterpretLine("1 2 2DROP")
+	if len(f.DS) != 0 {
+		t.Fatalf("2DROP failed, DS: %v", f.DS)
+	}
+
+	// Division & Modulo
+	f.InterpretLine("10 2 /")
+	if len(f.DS) != 1 || f.DSPop() != 5 {
+		t.Fatal("/ failed")
+	}
+
+	f.InterpretLine("10 3 MOD")
+	if len(f.DS) != 1 || f.DSPop() != 1 {
+		t.Fatal("MOD failed")
+	}
+
+	// Comparisons
+	f.InterpretLine("0 0= 5 0=")
+	if len(f.DS) != 2 || f.DS[0] != -1 || f.DS[1] != 0 {
+		t.Fatalf("0= failed, DS: %v", f.DS)
+	}
+	f.DS = f.DS[:0]
+
+	f.InterpretLine("5 5 <> 5 6 <>")
+	if len(f.DS) != 2 || f.DS[0] != 0 || f.DS[1] != -1 {
+		t.Fatalf("<> failed, DS: %v", f.DS)
+	}
+	f.DS = f.DS[:0]
+
+	f.InterpretLine("0 0<> 5 0<>")
+	if len(f.DS) != 2 || f.DS[0] != 0 || f.DS[1] != -1 {
+		t.Fatalf("0<> failed, DS: %v", f.DS)
+	}
+	f.DS = f.DS[:0]
+
+	f.InterpretLine("-1 0< 0 0< 1 0<")
+	if len(f.DS) != 3 || f.DS[0] != -1 || f.DS[1] != 0 || f.DS[2] != 0 {
+		t.Fatalf("0< failed, DS: %v", f.DS)
+	}
+	f.DS = f.DS[:0]
+
+	f.InterpretLine("1 0> 0 0> -1 0>")
+	if len(f.DS) != 3 || f.DS[0] != -1 || f.DS[1] != 0 || f.DS[2] != 0 {
+		t.Fatalf("0> failed, DS: %v", f.DS)
+	}
+	f.DS = f.DS[:0]
+
+	f.InterpretLine("4 5 <= 5 5 <= 6 5 <=")
+	if len(f.DS) != 3 || f.DS[0] != -1 || f.DS[1] != -1 || f.DS[2] != 0 {
+		t.Fatalf("<= failed, DS: %v", f.DS)
+	}
+	f.DS = f.DS[:0]
+
+	f.InterpretLine("6 5 >= 5 5 >= 4 5 >=")
+	if len(f.DS) != 3 || f.DS[0] != -1 || f.DS[1] != -1 || f.DS[2] != 0 {
+		t.Fatalf(">= failed, DS: %v", f.DS)
+	}
+	f.DS = f.DS[:0]
+
+	// Arithmetic
+	f.InterpretLine("5 1+ 5 1- 5 2+ 5 2- 5 2* 10 2/ 5 NEGATE")
+	expectedArith := []Cell{6, 4, 7, 3, 10, 5, -5}
+	if len(f.DS) != len(expectedArith) {
+		t.Fatalf("Arithmetic count mismatch: %v", f.DS)
+	}
+	for i, exp := range expectedArith {
+		if f.DS[i] != exp {
+			t.Fatalf("Arithmetic [%d] expected %d, got %d", i, exp, f.DS[i])
+		}
+	}
+	f.DS = f.DS[:0]
+
+	// +!
+	f.InterpretLine("VARIABLE TESTVAR 10 TESTVAR ! 5 TESTVAR +! TESTVAR @")
+	if len(f.DS) != 1 || f.DSPop() != 15 {
+		t.Fatal("+! failed")
+	}
+
+	// ABS, MIN, MAX
+	f.InterpretLine("-5 ABS 5 ABS 3 7 MIN 7 3 MIN 3 7 MAX 7 3 MAX")
+	expectedExt := []Cell{5, 5, 3, 3, 7, 7}
+	if len(f.DS) != len(expectedExt) {
+		t.Fatalf("ABS/MIN/MAX count mismatch: %v", f.DS)
+	}
+	for i, exp := range expectedExt {
+		if f.DS[i] != exp {
+			t.Fatalf("ABS/MIN/MAX [%d] expected %d, got %d", i, exp, f.DS[i])
+		}
+	}
+	f.DS = f.DS[:0]
+
+	// I/O: SPACE, SPACES, ?, PAGE
+	out.Reset()
+	f.InterpretLine("SPACE")
+	if out.String() != " " {
+		t.Fatalf("SPACE expected ' ', got %q", out.String())
+	}
+	out.Reset()
+
+	f.InterpretLine("3 SPACES")
+	if out.String() != "   " {
+		t.Fatalf("SPACES expected '   ', got %q", out.String())
+	}
+	out.Reset()
+
+	f.InterpretLine("TESTVAR ?")
+	if out.String() != "15 " {
+		t.Fatalf("? expected '15 ', got %q", out.String())
+	}
+	out.Reset()
+
+	f.InterpretLine("PAGE")
+	if out.String() != "\014" {
+		t.Fatalf("PAGE expected FormFeed (12), got %q", out.String())
+	}
+	out.Reset()
+
+	// Misc: ERASE
+	f.Store(2000, 0x1234)
+	f.InterpretLine("2000 2 ERASE")
+	if f.Fetch(2000) != 0 {
+		t.Fatal("ERASE failed")
+	}
+}
