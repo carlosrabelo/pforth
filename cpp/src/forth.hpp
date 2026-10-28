@@ -32,6 +32,7 @@ public:
     Forth(std::istream* input = &std::cin, std::ostream* output = &std::cout);
     ~Forth();
 
+    // Spec 002.1 Data and Return Stack Primitives
     void push_ds(Cell val);
     Cell pop_ds();
     Cell peek_ds() const;
@@ -39,6 +40,7 @@ public:
     void push_rs(Cell val);
     Cell pop_rs();
     Cell peek_rs() const;
+    void depth();
 
     // Spec 001.2 Console I/O Primitives
     void key();
