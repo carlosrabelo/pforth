@@ -92,3 +92,38 @@ TEST_CASE("Dictionary - Tick (') and >BODY", "[dictionary]") {
     f.word_to_body();
     REQUIRE(f.pop_ds() == 102);
 }
+
+TEST_CASE("Dictionary - Memory allocation (DP, HERE, PAD, ALLOT, comma, c-comma)", "[dictionary]") {
+    pforth::Forth f;
+
+    // Initial DP and HERE
+    f.word_dp();
+    REQUIRE(f.pop_ds() == 1002);
+
+    f.word_here();
+    REQUIRE(f.pop_ds() == 1024);
+
+    f.word_pad();
+    REQUIRE(f.pop_ds() == 1024 + 68);
+
+    // ALLOT 10 bytes
+    f.push_ds(10);
+    f.word_allot();
+    f.word_here();
+    REQUIRE(f.pop_ds() == 1034);
+
+    // Comma (,) writes cell and advances 2 bytes
+    f.push_ds(0x1234);
+    f.word_comma();
+    f.word_here();
+    REQUIRE(f.pop_ds() == 1036);
+    REQUIRE(f.fetch_cell(1034) == 0x1234);
+
+    // C-comma (C,) writes byte and advances 1 byte
+    f.push_ds(0xAB);
+    f.word_c_comma();
+    f.word_here();
+    REQUIRE(f.pop_ds() == 1037);
+    REQUIRE(f.c_fetch(1036) == 0xAB);
+}
+

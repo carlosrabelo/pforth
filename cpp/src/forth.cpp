@@ -15,6 +15,8 @@ static void sigint_handler(int) {
 Forth::Forth(std::istream* input, std::ostream* output)
     : in(input), out(output) {
     memory.fill(0);
+    store_cell(1002, 1024);
+    dp = 1024;
     init_primitives();
 }
 
@@ -756,6 +758,45 @@ void Forth::word_to_body() {
     }
 }
 
+Cell Forth::here() const {
+    return fetch_cell(1002);
+}
+
+void Forth::allot(int n) {
+    Cell cur = here();
+    store_cell(1002, static_cast<Cell>(cur + n));
+    dp = here();
+}
+
+void Forth::word_dp() {
+    push_ds(1002);
+}
+
+void Forth::word_here() {
+    push_ds(here());
+}
+
+void Forth::word_pad() {
+    push_ds(static_cast<Cell>(here() + 68));
+}
+
+void Forth::word_allot() {
+    Cell n = pop_ds();
+    allot(n);
+}
+
+void Forth::word_comma() {
+    Cell n = pop_ds();
+    store_cell(static_cast<uint16_t>(here()), n);
+    allot(2);
+}
+
+void Forth::word_c_comma() {
+    Cell c = pop_ds();
+    c_store(static_cast<uint16_t>(here()), static_cast<uint8_t>(c & 0xFF));
+    allot(1);
+}
+
 void Forth::init_primitives() {
     define_primitive("DUP", [](Forth* f) { f->word_dup(); });
     define_primitive("DROP", [](Forth* f) { f->word_drop(); });
@@ -840,6 +881,13 @@ void Forth::init_primitives() {
     define_primitive("FIND", [](Forth* f) { f->word_find(); });
     define_primitive("'", [](Forth* f) { f->word_tick(); });
     define_primitive(">BODY", [](Forth* f) { f->word_to_body(); });
+
+    define_primitive("DP", [](Forth* f) { f->word_dp(); });
+    define_primitive("HERE", [](Forth* f) { f->word_here(); });
+    define_primitive("PAD", [](Forth* f) { f->word_pad(); });
+    define_primitive("ALLOT", [](Forth* f) { f->word_allot(); });
+    define_primitive(",", [](Forth* f) { f->word_comma(); });
+    define_primitive("C,", [](Forth* f) { f->word_c_comma(); });
 }
 
 } // namespace pforth
