@@ -850,6 +850,27 @@ func (f *Forth) WordRecurse() {
 	f.CompileList = append(f.CompileList, Cell(f.CompilingXT))
 }
 
+// WordBranch performs an unconditional branch by inline relative offset: BRANCH
+func (f *Forth) WordBranch() {
+	if f.IP < len(f.CurrentBody) {
+		offset := int(f.CurrentBody[f.IP])
+		f.IP += offset
+	}
+}
+
+// WordZeroBranch branches by inline offset if TOS is 0, else skips offset: 0BRANCH ( flag -- )
+func (f *Forth) WordZeroBranch() {
+	flag := f.DSPop()
+	if f.IP < len(f.CurrentBody) {
+		offset := int(f.CurrentBody[f.IP])
+		if flag == 0 {
+			f.IP += offset
+		} else {
+			f.IP++
+		}
+	}
+}
+
 // WordCreate parses next word name from input, creating new WordCreate entry: CREATE ( -- )
 func (f *Forth) WordCreate() {
 	token, ok := f.ParseWord()
@@ -1497,4 +1518,8 @@ func (f *Forth) InitPrimitives() {
 	f.DefineImmediate(";", func(f *Forth) { f.WordSemicolon() })
 	f.DefineImmediate("IMMEDIATE", func(f *Forth) { f.WordImmediate() })
 	f.DefineImmediate("RECURSE", func(f *Forth) { f.WordRecurse() })
+
+	// 007 Control Flow
+	f.DefinePrimitive("BRANCH", func(f *Forth) { f.WordBranch() })
+	f.DefinePrimitive("0BRANCH", func(f *Forth) { f.WordZeroBranch() })
 }
