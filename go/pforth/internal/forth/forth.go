@@ -1512,6 +1512,67 @@ func (f *Forth) WordType() {
 	}
 }
 
+func formatCell(val Cell, base int, isSigned bool) string {
+	if base < 2 || base > 36 {
+		base = 10
+	}
+	const digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	if val == 0 {
+		return "0"
+	}
+	neg := false
+	var uval uint32
+	if isSigned && val < 0 {
+		neg = true
+		uval = uint32(-int32(val))
+	} else {
+		uval = uint32(uint16(val))
+	}
+	var buf []byte
+	for uval > 0 {
+		buf = append(buf, digits[uval%uint32(base)])
+		uval /= uint32(base)
+	}
+	if neg {
+		buf = append(buf, '-')
+	}
+	for i, j := 0, len(buf)-1; i < j; i, j = i+1, j-1 {
+		buf[i], buf[j] = buf[j], buf[i]
+	}
+	return string(buf)
+}
+
+// WordDot pops signed cell and prints it in current base followed by a space: . ( n -- )
+func (f *Forth) WordDot() {
+	n := f.DSPop()
+	b := f.GetBase()
+	s := formatCell(n, b, true)
+	f.EmitStr(s + " ")
+}
+
+// WordUDot pops cell and prints it as unsigned in current base followed by space: U. ( u -- )
+func (f *Forth) WordUDot() {
+	n := f.DSPop()
+	b := f.GetBase()
+	s := formatCell(n, b, false)
+	f.EmitStr(s + " ")
+}
+
+// WordDotS non-destructively displays stack contents: .S ( -- )
+func (f *Forth) WordDotS() {
+	b := f.GetBase()
+	f.EmitStr(fmt.Sprintf("<%d>", len(f.DS)))
+	for _, v := range f.DS {
+		f.EmitStr(" " + formatCell(v, b, true))
+	}
+	f.EmitStr(" ")
+}
+
+// WordPage clears the screen: PAGE ( -- )
+func (f *Forth) WordPage() {
+	f.EmitStr("\033[2J\033[H")
+}
+
 // WordBye sets Running to false to signal interpreter termination.
 func (f *Forth) WordBye() {
 	f.Running = false
@@ -1798,4 +1859,10 @@ func (f *Forth) InitPrimitives() {
 	f.DefineImmediate("LOOP", func(f *Forth) { f.WordLoop() })
 	f.DefineImmediate("+LOOP", func(f *Forth) { f.WordPlusLoop() })
 	f.DefineImmediate("LEAVE", func(f *Forth) { f.WordLeave() })
+
+	// 008 Advanced I/O
+	f.DefinePrimitive(".", func(f *Forth) { f.WordDot() })
+	f.DefinePrimitive("U.", func(f *Forth) { f.WordUDot() })
+	f.DefinePrimitive(".S", func(f *Forth) { f.WordDotS() })
+	f.DefinePrimitive("PAGE", func(f *Forth) { f.WordPage() })
 }

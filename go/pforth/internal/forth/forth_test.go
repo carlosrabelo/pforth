@@ -2293,3 +2293,69 @@ func TestCountedLoopRuntimeAndCompiler(t *testing.T) {
 	})
 	f.RS = f.RS[:0]
 }
+
+func TestNumericOutputAndStackInspector(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+	f.InitPrimitives()
+
+	// 1. Signed dot (.)
+	f.InterpretLine("42 . -15 . 0 .")
+	if out.String() != "42 -15 0 " {
+		t.Fatalf("WordDot expected '42 -15 0 ', got %q", out.String())
+	}
+	out.Reset()
+
+	// 2. Unsigned dot (U.)
+	f.InterpretLine("-1 U. 42 U.")
+	if out.String() != "65535 42 " {
+		t.Fatalf("WordUDot expected '65535 42 ', got %q", out.String())
+	}
+	out.Reset()
+
+	// 3. Different base (hex)
+	f.InterpretLine("255 16 BASE ! . -1 U. $A BASE !")
+	if out.String() != "FF FFFF " {
+		t.Fatalf("Hex formatting expected 'FF FFFF ', got %q", out.String())
+	}
+	out.Reset()
+
+	// 4. Stack inspector (.S) non-destructive
+	f.DSPush(10)
+	f.DSPush(20)
+	f.DSPush(30)
+	f.WordDotS()
+	if out.String() != "<3> 10 20 30 " {
+		t.Fatalf(".S expected '<3> 10 20 30 ', got %q", out.String())
+	}
+	if len(f.DS) != 3 || f.DS[0] != 10 || f.DS[1] != 20 || f.DS[2] != 30 {
+		t.Fatalf(".S altered stack: %v", f.DS)
+	}
+	out.Reset()
+	f.DS = f.DS[:0]
+
+	// 5. PAGE
+	f.WordPage()
+	if out.String() != "\033[2J\033[H" {
+		t.Fatalf("PAGE expected ANSI escape, got %q", out.String())
+	}
+	out.Reset()
+
+	// 6. Underflow tests
+	expectPanic := func(name string, fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatalf("%s expected panic", name)
+			}
+		}()
+		fn()
+	}
+
+	expectPanic("dot on empty stack", func() {
+		f.WordDot()
+	})
+
+	expectPanic("U. on empty stack", func() {
+		f.WordUDot()
+	})
+}
