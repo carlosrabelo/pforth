@@ -223,6 +223,10 @@ public:
     void word_immediate(); // IMMEDIATE
     void word_recurse();   // RECURSE
 
+    // Spec 007.1 Runtime Branch Execution
+    void word_branch();      // BRANCH
+    void word_zero_branch(); // 0BRANCH
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();
