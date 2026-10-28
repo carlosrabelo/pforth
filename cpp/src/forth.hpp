@@ -68,6 +68,13 @@ public:
     void word_swap(); // SWAP
     void word_over(); // OVER
 
+    // Spec 003.2 Extended Single Stack Manipulation Words
+    void word_qdup();  // ?DUP
+    void word_rot();   // ROT
+    void word_nrot();  // -ROT
+    void word_nip();   // NIP
+    void word_tuck();  // TUCK
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();
