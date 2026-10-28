@@ -1,4 +1,5 @@
 #include "forth.hpp"
+#include <algorithm>
 #include <cctype>
 #include <csignal>
 
@@ -1412,6 +1413,64 @@ void Forth::word_unloop() {
     pop_rs();
 }
 
+static std::string format_cell(Cell val, int base, bool is_signed) {
+    if (base < 2 || base > 36) base = 10;
+    static const char digits[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    if (val == 0) return "0";
+    bool neg = false;
+    uint32_t uval = 0;
+    if (is_signed && val < 0) {
+        neg = true;
+        uval = static_cast<uint32_t>(-static_cast<int32_t>(val));
+    } else {
+        uval = static_cast<uint16_t>(val);
+    }
+    std::string res;
+    while (uval > 0) {
+        res += digits[uval % base];
+        uval /= base;
+    }
+    if (neg) {
+        res += '-';
+    }
+    std::reverse(res.begin(), res.end());
+    return res;
+}
+
+void Forth::word_dot() {
+    Cell n = pop_ds();
+    int b = get_base();
+    std::string s = format_cell(n, b, true);
+    if (out) {
+        *out << s << ' ';
+    }
+}
+
+void Forth::word_u_dot() {
+    Cell n = pop_ds();
+    int b = get_base();
+    std::string s = format_cell(n, b, false);
+    if (out) {
+        *out << s << ' ';
+    }
+}
+
+void Forth::word_dot_s() {
+    if (!out) return;
+    int b = get_base();
+    *out << "<" << ds.size() << ">";
+    for (size_t i = 0; i < ds.size(); ++i) {
+        *out << " " << format_cell(ds[i], b, true);
+    }
+    *out << " ";
+}
+
+void Forth::word_page() {
+    if (out) {
+        *out << "\033[2J\033[H";
+    }
+}
+
 void Forth::init_primitives() {
     define_primitive("DUP", [](Forth* f) { f->word_dup(); });
     define_primitive("DROP", [](Forth* f) { f->word_drop(); });
@@ -1553,6 +1612,11 @@ void Forth::init_primitives() {
     define_immediate("LOOP", [](Forth* f) { f->word_loop(); });
     define_immediate("+LOOP", [](Forth* f) { f->word_plus_loop(); });
     define_immediate("LEAVE", [](Forth* f) { f->word_leave(); });
+
+    define_primitive(".", [](Forth* f) { f->word_dot(); });
+    define_primitive("U.", [](Forth* f) { f->word_u_dot(); });
+    define_primitive(".S", [](Forth* f) { f->word_dot_s(); });
+    define_primitive("PAGE", [](Forth* f) { f->word_page(); });
 }
 
 } // namespace pforth

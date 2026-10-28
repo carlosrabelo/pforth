@@ -252,6 +252,12 @@ public:
     void word_leave();         // LEAVE
     void word_unloop();        // UNLOOP
 
+    // Spec 008.1 Numeric Output and Stack Inspector
+    void word_dot();   // .
+    void word_u_dot(); // U.
+    void word_dot_s(); // .S
+    void word_page();  // PAGE
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();
