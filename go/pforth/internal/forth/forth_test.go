@@ -1780,3 +1780,50 @@ func TestDelimitedWordScannerAndNumericParser(t *testing.T) {
 	underflow(func() { f.WordWord() })
 	underflow(func() { f.WordNumber() })
 }
+
+func TestOuterInterpreterLoop(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+
+	// Define primitive +
+	f.DefinePrimitive("+", func(f *Forth) { f.WordPlus() })
+
+	// InterpretLine with numbers and +
+	f.InterpretLine("10 20 +")
+	if len(f.DS) != 1 || f.DSPop() != 30 {
+		t.Fatal("InterpretLine '10 20 +' failed")
+	}
+
+	// Unknown word error
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected panic on unknown word")
+			} else {
+				fe, ok := r.(*ForthError)
+				if !ok || !strings.Contains(fe.Message, "UNKNOWN WORD: BOGUS") {
+					t.Fatalf("unexpected panic message: %v", r)
+				}
+			}
+		}()
+		f.InterpretLine("BOGUS")
+	}()
+
+	// ABORT clears stacks and state
+	f.DSPush(1)
+	f.RSPush(2)
+	f.State = true
+	f.WordAbort()
+	if len(f.DS) != 0 || len(f.RS) != 0 || f.State {
+		t.Fatal("WordAbort failed to reset state")
+	}
+
+	// QUIT in REPL
+	in := strings.NewReader("100 200 +\n")
+	f2 := New(in, out)
+	f2.DefinePrimitive("+", func(f *Forth) { f.WordPlus() })
+	f2.QUIT()
+	if len(f2.DS) != 1 || f2.DSPop() != 300 {
+		t.Fatal("QUIT REPL loop execution failed")
+	}
+}
