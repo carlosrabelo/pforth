@@ -3,7 +3,7 @@ program test_runner;
 {$mode objfpc}{$H+}
 
 uses
-  SysUtils, pforth_cli;
+  SysUtils, Classes, pforth_cli, pforth_types, pforth_engine;
 
 var
   TotalTests: Integer = 0;
@@ -48,9 +48,77 @@ begin
   AssertTrue('RunCLI returns 0', RunCLI(Cfg1) = 0);
 end;
 
+procedure TestConsoleIOPrimitives;
+var
+  InStream, OutStream: TStringStream;
+  F: TForth;
+  I: Integer;
+  UnderflowCaught: Boolean;
+begin
+  WriteLn('Testing Console I/O primitives...');
+  InStream := TStringStream.Create('X');
+  OutStream := TStringStream.Create('');
+  F := TForth.Create(InStream, OutStream);
+  try
+    // KEY
+    F.WordKey;
+    AssertTrue('KEY reads X onto DS', F.DepthDS = 1);
+    AssertTrue('KEY value is Ord(X)', F.PeekDS = Ord('X'));
+
+    // EMIT
+    F.WordEmit;
+    AssertTrue('EMIT pops DS', F.DepthDS = 0);
+    AssertTrue('EMIT writes X to output', OutStream.DataString = 'X');
+
+    // KEY at EOF pushes 0
+    F.WordKey;
+    AssertTrue('KEY at EOF pushes 0', (F.DepthDS = 1) and (F.PopDS = 0));
+
+    // CR, SPACE, SPACES
+    OutStream.Position := 0;
+    OutStream.Size := 0;
+    F.WordCR;
+    F.WordSpace;
+    F.PushDS(3);
+    F.WordSpaces;
+    AssertTrue('CR SPACE SPACES outputs newline and 4 spaces', OutStream.DataString = #10'    ');
+
+    // TYPE
+    OutStream.Position := 0;
+    OutStream.Size := 0;
+    for I := 0 to 4 do
+      F.Memory[1024 + I] := Byte(Ord('HELLO'[I + 1]));
+    F.PushDS(1024);
+    F.PushDS(5);
+    F.WordType;
+    AssertTrue('TYPE outputs HELLO', OutStream.DataString = 'HELLO');
+    AssertTrue('TYPE leaves DS empty', F.DepthDS = 0);
+
+    // BYE
+    AssertTrue('Running is true before BYE', F.Running);
+    F.WordBye;
+    AssertTrue('Running is false after BYE', not F.Running);
+
+    // Stack underflow raises exception
+    UnderflowCaught := False;
+    try
+      F.PopDS;
+    except
+      on E: EForthError do
+        UnderflowCaught := True;
+    end;
+    AssertTrue('PopDS underflow raises EForthError', UnderflowCaught);
+  finally
+    F.Free;
+    InStream.Free;
+    OutStream.Free;
+  end;
+end;
+
 begin
   WriteLn('=== Running Free Pascal Test Runner ===');
   TestCLIArgDispatch;
+  TestConsoleIOPrimitives;
 
   WriteLn('----------------------------------------');
   WriteLn(Format('Tests: %d | Passed: %d | Failed: %d', [TotalTests, PassedTests, FailedTests]));
