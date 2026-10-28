@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -1668,13 +1669,154 @@ func (f *Forth) LoadFile(path string) error {
 
 // LoadSystem evaluates Forth code line by line.
 func (f *Forth) LoadSystem(data string) {
+	savedTIB := f.TIB
+	savedIN := f.IN
+	defer func() {
+		f.TIB = savedTIB
+		f.IN = savedIN
+	}()
 	for _, line := range strings.Split(data, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "\\") {
+		f.CheckInterrupt()
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "\\") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "#REQUIRE") {
+			parts := strings.Fields(trimmed)
+			if len(parts) > 1 {
+				f.RequireModule(parts[1])
+			}
 			continue
 		}
 		f.InterpretLine(line)
 	}
+}
+
+// WordEvaluate evaluates Forth code stored in memory: EVALUATE ( addr len -- )
+func (f *Forth) WordEvaluate() {
+	length := int(f.DSPop())
+	addr := int(f.DSPop())
+	savedTIB := f.TIB
+	savedIN := f.IN
+
+	var buf []byte
+	for i := 0; i < length; i++ {
+		buf = append(buf, f.CFetch(addr+i))
+	}
+	f.TIB = buf
+	f.IN = 0
+	defer func() {
+		f.TIB = savedTIB
+		f.IN = savedIN
+	}()
+	f.InterpretLoop()
+}
+
+// WordIncluded opens and evaluates a file given by path string: INCLUDED ( addr len -- )
+func (f *Forth) WordIncluded() {
+	length := int(f.DSPop())
+	addr := int(f.DSPop())
+	var buf []byte
+	for i := 0; i < length; i++ {
+		buf = append(buf, f.CFetch(addr+i))
+	}
+	path := string(buf)
+	if err := f.LoadFile(path); err != nil {
+		forthError("CANNOT OPEN: %s", path)
+	}
+}
+
+// WordInclude loads and evaluates a file given by next token: INCLUDE <file>
+func (f *Forth) WordInclude() {
+	token, ok := f.ParseWord()
+	if !ok {
+		forthError("FILE NAME EXPECTED")
+	}
+	if err := f.LoadFile(token); err != nil {
+		forthError("CANNOT OPEN: %s", token)
+	}
+}
+
+const coreFSSource = `\ pForth core library
+: NIP    SWAP DROP ;
+: TUCK   SWAP OVER ;
+: ROT    >R SWAP R> SWAP ;
+: -ROT   SWAP >R SWAP R> ;
+: 2DUP   OVER OVER ;
+: 2DROP  DROP DROP ;
+: /      /MOD NIP ;
+: MOD    /MOD DROP ;
+: 0=     0 = ;
+: <>     = 0= ;
+: 0<>    0 <> ;
+: 0<     0 < ;
+: 0>     0 > ;
+: <=     OVER OVER < ROT ROT = OR ;
+: >=     OVER OVER > ROT ROT = OR ;
+: 1+     1 + ;
+: 1-     1 - ;
+: 2+     2 + ;
+: 2-     2 - ;
+: 2*     2 * ;
+: 2/     2 / ;
+: NEGATE 0 SWAP - ;
+: +!     TUCK @ + SWAP ! ;
+: ABS    DUP 0< IF NEGATE THEN ;
+: MIN    2DUP < IF DROP ELSE SWAP DROP THEN ;
+: MAX    2DUP > IF DROP ELSE SWAP DROP THEN ;
+: SPACE  32 EMIT ;
+: SPACES 0 MAX 0 DO SPACE LOOP ;
+: ?      @ . ;
+: PAGE   12 EMIT ;
+: ERASE  0 FILL ;
+`
+
+func findLibPath(name string) string {
+	lower := strings.ToLower(name)
+	if !strings.HasSuffix(lower, ".fs") {
+		lower += ".fs"
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	searchDirs := []string{"libs", "demos"}
+	for {
+		for _, sd := range searchDirs {
+			candidate := filepath.Join(dir, sd, lower)
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return ""
+}
+
+// RequireModule loads a module by name with deduplication.
+func (f *Forth) RequireModule(name string) {
+	upper := strings.ToUpper(name)
+	if f.Loaded[upper] {
+		return
+	}
+	path := findLibPath(name)
+	if path != "" {
+		f.Loaded[upper] = true
+		if err := f.LoadFile(path); err != nil {
+			forthError("MODULE NOT FOUND: %s", name)
+		}
+		return
+	}
+	if upper == "CORE" {
+		f.Loaded[upper] = true
+		f.LoadSystem(coreFSSource)
+		return
+	}
+	forthError("MODULE NOT FOUND: %s", name)
 }
 
 // EmitStr writes a string to output.
@@ -1947,4 +2089,7 @@ func (f *Forth) InitPrimitives() {
 	f.DefineImmediate("S\"", func(f *Forth) { f.WordSString() })
 	f.DefineImmediate("(", func(f *Forth) { f.WordParen() })
 	f.DefineImmediate("\\", func(f *Forth) { f.WordBackslash() })
+	f.DefinePrimitive("EVALUATE", func(f *Forth) { f.WordEvaluate() })
+	f.DefinePrimitive("INCLUDED", func(f *Forth) { f.WordIncluded() })
+	f.DefinePrimitive("INCLUDE", func(f *Forth) { f.WordInclude() })
 }
