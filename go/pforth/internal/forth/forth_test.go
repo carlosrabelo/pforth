@@ -792,3 +792,119 @@ func TestReturnStackTransferWords(t *testing.T) {
 	underflow("RETURN STACK UNDERFLOW", func() { f.WordRFrom() })
 	underflow("RETURN STACK UNDERFLOW", func() { f.WordRFetch() })
 }
+
+func TestBasicArithmeticAndDivisionPrimitives(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+
+	// +
+	f.DSPush(10)
+	f.DSPush(20)
+	f.WordPlus()
+	if len(f.DS) != 1 || f.DSPop() != 30 {
+		t.Fatal("+ failed")
+	}
+
+	// - ( 20 7 - -> 13 )
+	f.DSPush(20)
+	f.DSPush(7)
+	f.WordMinus()
+	if len(f.DS) != 1 || f.DSPop() != 13 {
+		t.Fatal("- failed")
+	}
+
+	// *
+	f.DSPush(6)
+	f.DSPush(7)
+	f.WordMultiply()
+	if len(f.DS) != 1 || f.DSPop() != 42 {
+		t.Fatal("* failed")
+	}
+
+	// /MOD ( 17 5 /MOD -> 2 rem, 3 quot )
+	f.DSPush(17)
+	f.DSPush(5)
+	f.WordSlashMod()
+	if len(f.DS) != 2 || f.DSPop() != 3 || f.DSPop() != 2 {
+		t.Fatal("/MOD failed")
+	}
+
+	// /
+	f.DSPush(20)
+	f.DSPush(4)
+	f.WordSlash()
+	if len(f.DS) != 1 || f.DSPop() != 5 {
+		t.Fatal("/ failed")
+	}
+
+	// MOD
+	f.DSPush(23)
+	f.DSPush(7)
+	f.WordMod()
+	if len(f.DS) != 1 || f.DSPop() != 2 {
+		t.Fatal("MOD failed")
+	}
+
+	// NEGATE
+	f.DSPush(10)
+	f.WordNegate()
+	if len(f.DS) != 1 || f.DSPop() != -10 {
+		t.Fatal("NEGATE failed")
+	}
+	f.DSPush(-5)
+	f.WordNegate()
+	if len(f.DS) != 1 || f.DSPop() != 5 {
+		t.Fatal("NEGATE negative failed")
+	}
+
+	// Division by zero
+	expectDivZero := func(fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected division by zero panic")
+			} else {
+				fe, ok := r.(*ForthError)
+				if !ok || fe.Message != "DIVISION BY ZERO" {
+					t.Fatalf("expected DIVISION BY ZERO, got %v", r)
+				}
+			}
+		}()
+		fn()
+	}
+
+	f.DSPush(10)
+	f.DSPush(0)
+	expectDivZero(func() { f.WordSlashMod() })
+
+	f.DSPush(10)
+	f.DSPush(0)
+	expectDivZero(func() { f.WordSlash() })
+
+	f.DSPush(10)
+	f.DSPush(0)
+	expectDivZero(func() { f.WordMod() })
+
+	// Underflow tests
+	underflow := func(fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected underflow panic")
+			}
+		}()
+		fn()
+	}
+
+	underflow(func() { f.WordPlus() })
+	underflow(func() { f.DSPush(1); f.WordPlus() })
+	underflow(func() { f.WordMinus() })
+	underflow(func() { f.DSPush(1); f.WordMinus() })
+	underflow(func() { f.WordMultiply() })
+	underflow(func() { f.DSPush(1); f.WordMultiply() })
+	underflow(func() { f.WordSlashMod() })
+	underflow(func() { f.DSPush(1); f.WordSlashMod() })
+	underflow(func() { f.WordSlash() })
+	underflow(func() { f.DSPush(1); f.WordSlash() })
+	underflow(func() { f.WordMod() })
+	underflow(func() { f.DSPush(1); f.WordMod() })
+	underflow(func() { f.WordNegate() })
+}
