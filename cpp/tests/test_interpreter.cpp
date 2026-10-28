@@ -127,3 +127,58 @@ TEST_CASE("Interpreter - Outer interpreter execution (INTERPRET, ABORT)", "[inte
     REQUIRE(f.state == false);
 }
 
+TEST_CASE("Interpreter - Compiler state and directives (STATE, [, ], LIT, LITERAL)", "[interpreter]") {
+    pforth::Forth f;
+
+    // Initial STATE is 0
+    f.word_state();
+    REQUIRE(f.pop_ds() == 0);
+
+    // ] sets STATE to true (-1)
+    f.word_right_bracket();
+    f.word_state();
+    REQUIRE(f.pop_ds() == -1);
+    REQUIRE(f.state == true);
+
+    // [ sets STATE to false (0)
+    f.word_left_bracket();
+    f.word_state();
+    REQUIRE(f.pop_ds() == 0);
+    REQUIRE(f.state == false);
+
+    // LIT runtime execution
+    int lit_xt = f.find_xt("LIT");
+    pforth::Word* w_lit_test = f.define_word("TESTLIT", pforth::WordType::Colon, nullptr, {static_cast<pforth::Cell>(lit_xt), 555}, false);
+    (void)w_lit_test;
+    int test_xt = f.find_xt("TESTLIT");
+    f.push_ds(test_xt);
+    f.word_execute();
+    REQUIRE(f.ds.size() == 1);
+    REQUIRE(f.pop_ds() == 555);
+
+    // LITERAL compiles LIT followed by value
+    f.compile_list.clear();
+    f.push_ds(888);
+    f.word_literal();
+    REQUIRE(f.compile_list.size() == 2);
+    REQUIRE(f.compile_list[0] == lit_xt);
+    REQUIRE(f.compile_list[1] == 888);
+
+    // COMPILE compiles next word's XT
+    f.compile_list.clear();
+    f.tib = "SWAP";
+    f.in_ptr = 0;
+    f.word_compile();
+    REQUIRE(f.compile_list.size() == 1);
+    REQUIRE(f.compile_list[0] == f.find_xt("SWAP"));
+
+    // [COMPILE] forces compilation of immediate word
+    f.compile_list.clear();
+    f.tib = "[";
+    f.in_ptr = 0;
+    f.word_bracket_compile();
+    REQUIRE(f.compile_list.size() == 1);
+    REQUIRE(f.compile_list[0] == f.find_xt("["));
+}
+
+

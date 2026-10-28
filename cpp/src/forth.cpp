@@ -1043,6 +1043,61 @@ void Forth::word_lit() {
     }
 }
 
+void Forth::word_state() {
+    push_ds(state ? -1 : 0);
+}
+
+void Forth::word_left_bracket() {
+    state = false;
+}
+
+void Forth::word_right_bracket() {
+    state = true;
+}
+
+void Forth::word_literal() {
+    Cell val = pop_ds();
+    int lit_xt = find_xt("LIT");
+    if (lit_xt < 0) {
+        define_primitive("LIT", [](Forth* f) { f->word_lit(); });
+        lit_xt = find_xt("LIT");
+    }
+    compile_list.push_back(static_cast<Cell>(lit_xt));
+    compile_list.push_back(val);
+}
+
+void Forth::word_compile() {
+    std::string token;
+    if (!parse_word(token)) {
+        throw std::runtime_error("WORD NAME EXPECTED");
+    }
+    std::string upper_name;
+    for (char c : token) {
+        upper_name += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    }
+    int xt = find_xt(upper_name);
+    if (xt < 0) {
+        throw std::runtime_error("WORD NOT FOUND: " + token);
+    }
+    compile_list.push_back(static_cast<Cell>(xt));
+}
+
+void Forth::word_bracket_compile() {
+    std::string token;
+    if (!parse_word(token)) {
+        throw std::runtime_error("WORD NAME EXPECTED");
+    }
+    std::string upper_name;
+    for (char c : token) {
+        upper_name += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    }
+    int xt = find_xt(upper_name);
+    if (xt < 0) {
+        throw std::runtime_error("WORD NOT FOUND: " + token);
+    }
+    compile_list.push_back(static_cast<Cell>(xt));
+}
+
 void Forth::init_primitives() {
     define_primitive("DUP", [](Forth* f) { f->word_dup(); });
     define_primitive("DROP", [](Forth* f) { f->word_drop(); });
@@ -1145,6 +1200,13 @@ void Forth::init_primitives() {
     define_primitive("BASE", [](Forth* f) { f->word_base(); });
     define_primitive("INTERPRET", [](Forth* f) { f->word_interpret(); });
     define_primitive("LIT", [](Forth* f) { f->word_lit(); });
+
+    define_primitive("STATE", [](Forth* f) { f->word_state(); });
+    define_immediate("[", [](Forth* f) { f->word_left_bracket(); });
+    define_primitive("]", [](Forth* f) { f->word_right_bracket(); });
+    define_immediate("LITERAL", [](Forth* f) { f->word_literal(); });
+    define_primitive("COMPILE", [](Forth* f) { f->word_compile(); });
+    define_immediate("[COMPILE]", [](Forth* f) { f->word_bracket_compile(); });
 }
 
 } // namespace pforth
