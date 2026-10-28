@@ -56,6 +56,12 @@ public:
     void word_plus_store(); // +!
     void word_question();   // ?
 
+    // Spec 002.4 Memory Block Operations
+    void word_fill();   // FILL
+    void word_erase();  // ERASE
+    void word_cmove();  // CMOVE
+    void word_cmover(); // CMOVE>
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();
