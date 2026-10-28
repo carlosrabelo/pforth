@@ -1819,6 +1819,15 @@ func (f *Forth) RequireModule(name string) {
 	forthError("MODULE NOT FOUND: %s", name)
 }
 
+// WordRequire parses next module name token and loads module: #REQUIRE <module>
+func (f *Forth) WordRequire() {
+	token, ok := f.ParseWord()
+	if !ok {
+		forthError("MODULE NAME EXPECTED")
+	}
+	f.RequireModule(token)
+}
+
 // EmitStr writes a string to output.
 func (f *Forth) EmitStr(s string) {
 	if f.Output != nil {
@@ -2092,4 +2101,5 @@ func (f *Forth) InitPrimitives() {
 	f.DefinePrimitive("EVALUATE", func(f *Forth) { f.WordEvaluate() })
 	f.DefinePrimitive("INCLUDED", func(f *Forth) { f.WordIncluded() })
 	f.DefinePrimitive("INCLUDE", func(f *Forth) { f.WordInclude() })
+	f.DefinePrimitive("#REQUIRE", func(f *Forth) { f.WordRequire() })
 }
