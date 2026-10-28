@@ -13,12 +13,16 @@ help: ## Show available targets
 
 build: ## Build all components
 	@$(MAKE) -C cpp build
+	@$(MAKE) -C go build
 
 test: ## Run tests across all components
 	@$(MAKE) -C cpp test
+	@$(MAKE) -C go test
 
 quality: ## Run quality checks across all components
 	@$(MAKE) -C cpp quality
+	@$(MAKE) -C go quality
 
 clean: ## Remove build artifacts
 	@$(MAKE) -C cpp clean
+	@$(MAKE) -C go clean
