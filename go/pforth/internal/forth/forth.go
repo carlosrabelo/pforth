@@ -193,6 +193,45 @@ func (f *Forth) WordQuestion() {
 	f.EmitStr(fmt.Sprintf("%d ", val))
 }
 
+// WordFill fills memory region starting at addr of len bytes with byte value: FILL ( addr len val -- )
+func (f *Forth) WordFill() {
+	val := byte(f.DSPop() & 0xFF)
+	length := int(f.DSPop())
+	addr := int(f.DSPop())
+	for i := 0; i < length; i++ {
+		f.CStore(addr+i, val)
+	}
+}
+
+// WordErase fills memory region starting at addr of len bytes with zero: ERASE ( addr len -- )
+func (f *Forth) WordErase() {
+	length := int(f.DSPop())
+	addr := int(f.DSPop())
+	for i := 0; i < length; i++ {
+		f.CStore(addr+i, 0)
+	}
+}
+
+// WordCMove copies len bytes from src to dst forward order: CMOVE ( dst src len -- )
+func (f *Forth) WordCMove() {
+	length := int(f.DSPop())
+	src := int(f.DSPop())
+	dst := int(f.DSPop())
+	for i := 0; i < length; i++ {
+		f.CStore(dst+i, f.CFetch(src+i))
+	}
+}
+
+// WordCMoveGreater copies len bytes from src to dst backward order: CMOVE> ( dst src len -- )
+func (f *Forth) WordCMoveGreater() {
+	length := int(f.DSPop())
+	src := int(f.DSPop())
+	dst := int(f.DSPop())
+	for i := length - 1; i >= 0; i-- {
+		f.CStore(dst+i, f.CFetch(src+i))
+	}
+}
+
 // WordSpan pushes the address of the SPAN system variable onto the stack.
 func (f *Forth) WordSpan() {
 	f.DSPush(Cell(SpanAddr))

@@ -466,3 +466,91 @@ func TestCellAndByteAccessPrimitives(t *testing.T) {
 	underflow(func() { f.DSPush(1); f.WordPlusStore() })
 	underflow(func() { f.WordQuestion() })
 }
+
+func TestMemoryBlockOperations(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+
+	// FILL
+	f.DSPush(3000) // addr
+	f.DSPush(10)   // len
+	f.DSPush(0x55) // val
+	f.WordFill()
+	for i := 0; i < 10; i++ {
+		if f.CFetch(3000+i) != 0x55 {
+			t.Fatalf("FILL failed at index %d, expected 0x55 got 0x%x", i, f.CFetch(3000+i))
+		}
+	}
+
+	// ERASE
+	f.DSPush(3000) // addr
+	f.DSPush(10)   // len
+	f.WordErase()
+	for i := 0; i < 10; i++ {
+		if f.CFetch(3000+i) != 0 {
+			t.Fatalf("ERASE failed at index %d, expected 0 got 0x%x", i, f.CFetch(3000+i))
+		}
+	}
+
+	// CMOVE non-overlapping: dst=9010, src=9000, len=5
+	for i := 0; i < 5; i++ {
+		f.CStore(9000+i, byte(i+10))
+	}
+	f.DSPush(9010) // dst
+	f.DSPush(9000) // src
+	f.DSPush(5)    // len
+	f.WordCMove()
+	for i := 0; i < 5; i++ {
+		if f.CFetch(9010+i) != byte(i+10) {
+			t.Fatalf("CMOVE failed at %d, expected %d got %d", 9010+i, i+10, f.CFetch(9010+i))
+		}
+	}
+
+	// CMOVE forward overlapping with dst > src (propagates first byte)
+	for i := 0; i < 5; i++ {
+		f.CStore(9020+i, byte(i+20))
+	}
+	f.DSPush(9021) // dst
+	f.DSPush(9020) // src
+	f.DSPush(4)    // len
+	f.WordCMove()
+	if f.CFetch(9021) != 20 || f.CFetch(9022) != 20 || f.CFetch(9023) != 20 || f.CFetch(9024) != 20 {
+		t.Fatalf("CMOVE forward overlap propagation failed: got [%d, %d, %d, %d]",
+			f.CFetch(9021), f.CFetch(9022), f.CFetch(9023), f.CFetch(9024))
+	}
+
+	// CMOVE> backward overlapping with dst > src (correctly preserves values)
+	for i := 0; i < 5; i++ {
+		f.CStore(9030+i, byte(i+30))
+	}
+	f.DSPush(9031) // dst
+	f.DSPush(9030) // src
+	f.DSPush(4)    // len
+	f.WordCMoveGreater()
+	if f.CFetch(9031) != 30 || f.CFetch(9032) != 31 || f.CFetch(9033) != 32 || f.CFetch(9034) != 33 {
+		t.Fatalf("CMOVE> backward overlap preservation failed: got [%d, %d, %d, %d]",
+			f.CFetch(9031), f.CFetch(9032), f.CFetch(9033), f.CFetch(9034))
+	}
+
+	// Underflow tests
+	underflow := func(fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected underflow panic")
+			}
+		}()
+		fn()
+	}
+
+	underflow(func() { f.WordFill() })
+	underflow(func() { f.DSPush(1); f.WordFill() })
+	underflow(func() { f.DSPush(1); f.DSPush(1); f.WordFill() })
+	underflow(func() { f.WordErase() })
+	underflow(func() { f.DSPush(1); f.WordErase() })
+	underflow(func() { f.WordCMove() })
+	underflow(func() { f.DSPush(1); f.WordCMove() })
+	underflow(func() { f.DSPush(1); f.DSPush(1); f.WordCMove() })
+	underflow(func() { f.WordCMoveGreater() })
+	underflow(func() { f.DSPush(1); f.WordCMoveGreater() })
+	underflow(func() { f.DSPush(1); f.DSPush(1); f.WordCMoveGreater() })
+}
