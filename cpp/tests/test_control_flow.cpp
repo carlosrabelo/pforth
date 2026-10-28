@@ -161,3 +161,49 @@ TEST_CASE("Control Flow - Indefinite loop constructs (BEGIN, UNTIL, AGAIN, WHILE
     REQUIRE_THROWS_WITH(f.interpret_line("WHILE"), "WHILE ONLY IN COMPILATION");
     REQUIRE_THROWS_WITH(f.interpret_line("REPEAT"), "REPEAT ONLY IN COMPILATION");
 }
+
+TEST_CASE("Control Flow - Counted loops (DO, LOOP, +LOOP, I, J, LEAVE, UNLOOP)", "[control_flow]") {
+    pforth::Forth f;
+
+    // Basic DO ... LOOP with I
+    f.interpret_line(": TEST_SUM 0 5 0 DO I + LOOP ;");
+    f.interpret_line("TEST_SUM");
+    REQUIRE(f.pop_ds() == 10);
+    REQUIRE(f.rs.empty());
+
+    // Nested DO ... LOOP with I and J
+    f.interpret_line(": TEST_NESTED 0 3 0 DO 4 0 DO J 10 * I + + LOOP LOOP ;");
+    f.interpret_line("TEST_NESTED");
+    REQUIRE(f.pop_ds() == 138);
+    REQUIRE(f.rs.empty());
+
+    // +LOOP with positive step (+2)
+    f.interpret_line(": TEST_POS_STEP 0 10 0 DO I + 2 +LOOP ;");
+    f.interpret_line("TEST_POS_STEP");
+    REQUIRE(f.pop_ds() == 20);
+    REQUIRE(f.rs.empty());
+
+    // +LOOP with negative step (-2)
+    f.interpret_line(": TEST_NEG_STEP 0 0 10 DO I + -2 +LOOP ;");
+    f.interpret_line("TEST_NEG_STEP");
+    REQUIRE(f.pop_ds() == 30);
+    REQUIRE(f.rs.empty());
+
+    // LEAVE terminates loop early
+    f.interpret_line(": TEST_LEAVE 0 10 0 DO I 5 = IF LEAVE ELSE I + THEN LOOP ;");
+    f.interpret_line("TEST_LEAVE");
+    REQUIRE(f.pop_ds() == 10);
+    REQUIRE(f.rs.empty());
+
+    // UNLOOP before early EXIT cleans return stack
+    f.interpret_line(": TEST_UNLOOP_EXIT 10 0 DO I 3 = IF 99 UNLOOP EXIT THEN LOOP 0 ;");
+    f.interpret_line("TEST_UNLOOP_EXIT");
+    REQUIRE(f.pop_ds() == 99);
+    REQUIRE(f.rs.empty());
+
+    // Error handling outside compilation state
+    REQUIRE_THROWS_WITH(f.interpret_line("DO"), "DO ONLY IN COMPILATION");
+    REQUIRE_THROWS_WITH(f.interpret_line("LOOP"), "LOOP ONLY IN COMPILATION");
+    REQUIRE_THROWS_WITH(f.interpret_line("+LOOP"), "+LOOP ONLY IN COMPILATION");
+    REQUIRE_THROWS_WITH(f.interpret_line("LEAVE"), "LEAVE ONLY IN COMPILATION");
+}
