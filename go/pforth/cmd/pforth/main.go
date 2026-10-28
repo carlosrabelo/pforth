@@ -1,12 +1,41 @@
 package main
 
 import (
+	"fmt"
+	"io"
 	"os"
 
 	"github.com/carlosrabelo/pforth/pforth/internal/forth"
 )
 
+type Config struct {
+	FilePaths []string
+}
+
+func ParseArgs(args []string) Config {
+	cfg := Config{}
+	if len(args) > 1 {
+		cfg.FilePaths = append(cfg.FilePaths, args[1:]...)
+	}
+	return cfg
+}
+
+func Run(cfg Config, in io.Reader, out io.Writer, errOut io.Writer) int {
+	f := forth.New(in, out)
+	for _, path := range cfg.FilePaths {
+		if err := f.LoadFile(path); err != nil {
+			fmt.Fprintln(errOut, err)
+			return 1
+		}
+	}
+	f.QUIT()
+	return 0
+}
+
 func main() {
-	f := forth.New(os.Stdin, os.Stdout)
-	_ = f
+	cfg := ParseArgs(os.Args)
+	code := Run(cfg, os.Stdin, os.Stdout, os.Stderr)
+	if code != 0 {
+		os.Exit(code)
+	}
 }
