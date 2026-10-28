@@ -1323,3 +1323,127 @@ func TestComparisonAndEqualityPrimitives(t *testing.T) {
 	underflow(func() { f.WordUGreaterEqual() })
 	underflow(func() { f.DSPush(1); f.WordUGreaterEqual() })
 }
+
+func TestDictionaryStructureAndLookup(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+
+	// DefinePrimitive & DefineImmediate
+	w1 := f.DefinePrimitive("MYWORD", func(f *Forth) {})
+	if w1 == nil || w1.Name != "MYWORD" || w1.Immediate {
+		t.Fatal("DefinePrimitive failed")
+	}
+
+	w2 := f.DefineImmediate("MYIMM", func(f *Forth) {})
+	if w2 == nil || w2.Name != "MYIMM" || !w2.Immediate {
+		t.Fatal("DefineImmediate failed")
+	}
+
+	if f.LatestWord() != w2 {
+		t.Fatal("LatestWord failed")
+	}
+
+	// Lookup & FindXT
+	foundW, ok := f.Lookup("myword")
+	if !ok || foundW != w1 {
+		t.Fatal("Lookup case-insensitive failed")
+	}
+
+	xt1, ok := f.FindXT("MYWORD")
+	if !ok || xt1 != 0 {
+		t.Fatalf("FindXT expected 0, got %d", xt1)
+	}
+
+	xt2, ok := f.FindXT("MYIMM")
+	if !ok || xt2 != 1 {
+		t.Fatalf("FindXT expected 1, got %d", xt2)
+	}
+
+	// FIND non-immediate
+	// Counted string at 3000: length 6, "MYWORD"
+	f.CStore(3000, 6)
+	for i, c := range []byte("MYWORD") {
+		f.CStore(3001+i, c)
+	}
+	f.DSPush(3000)
+	f.WordFind()
+	if len(f.DS) != 2 || f.DSPop() != -1 || f.DSPop() != Cell(xt1) {
+		t.Fatal("FIND non-immediate failed")
+	}
+
+	// FIND immediate
+	// Counted string at 3010: length 5, "myimm"
+	f.CStore(3010, 5)
+	for i, c := range []byte("myimm") {
+		f.CStore(3011+i, c)
+	}
+	f.DSPush(3010)
+	f.WordFind()
+	if len(f.DS) != 2 || f.DSPop() != 1 || f.DSPop() != Cell(xt2) {
+		t.Fatal("FIND immediate failed")
+	}
+
+	// FIND unknown
+	f.CStore(3020, 7)
+	for i, c := range []byte("UNKNOWN") {
+		f.CStore(3021+i, c)
+	}
+	f.DSPush(3020)
+	f.WordFind()
+	if len(f.DS) != 2 || f.DSPop() != 0 || f.DSPop() != 3020 {
+		t.Fatal("FIND unknown failed")
+	}
+
+	// ' (tick)
+	f.SetLine("  MYWORD   MYIMM ")
+	f.WordTick()
+	if len(f.DS) != 1 || f.DSPop() != Cell(xt1) {
+		t.Fatal("tick MYWORD failed")
+	}
+	f.WordTick()
+	if len(f.DS) != 1 || f.DSPop() != Cell(xt2) {
+		t.Fatal("tick MYIMM failed")
+	}
+
+	// tick missing word name
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected panic on tick with empty line")
+			}
+		}()
+		f.WordTick()
+	}()
+
+	// tick word not found
+	f.SetLine("NONEXISTENT")
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected panic on tick with unknown word")
+			}
+		}()
+		f.WordTick()
+	}()
+
+	// >BODY
+	w1.PFA = 2050
+	f.DSPush(Cell(xt1))
+	f.WordToBody()
+	if len(f.DS) != 1 || f.DSPop() != 2050 {
+		t.Fatal(">BODY failed")
+	}
+
+	// Underflow tests
+	underflow := func(fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected underflow panic")
+			}
+		}()
+		fn()
+	}
+
+	underflow(func() { f.WordFind() })
+	underflow(func() { f.WordToBody() })
+}
