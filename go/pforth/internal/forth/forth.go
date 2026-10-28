@@ -709,6 +709,37 @@ func (f *Forth) ExecuteWord(xt int) {
 	}
 }
 
+// WordCreate parses next word name from input, creating new WordCreate entry: CREATE ( -- )
+func (f *Forth) WordCreate() {
+	token, ok := f.ParseWord()
+	if !ok {
+		forthError("WORD NAME EXPECTED")
+	}
+	w := f.DefineWord(token, WordCreate, nil, nil, false)
+	w.PFA = f.Here()
+}
+
+// WordConstant pops n from stack, parses next word name, and creates WordConstant: CONSTANT ( n -- )
+func (f *Forth) WordConstant() {
+	val := f.DSPop()
+	token, ok := f.ParseWord()
+	if !ok {
+		forthError("WORD NAME EXPECTED")
+	}
+	f.DefineWord(token, WordConstant, nil, []Cell{val}, false)
+}
+
+// WordVariable parses next word name from input, creates WordVariable allocating 2 bytes initialized to 0: VARIABLE ( -- )
+func (f *Forth) WordVariable() {
+	token, ok := f.ParseWord()
+	if !ok {
+		forthError("WORD NAME EXPECTED")
+	}
+	w := f.DefineWord(token, WordVariable, nil, nil, false)
+	w.PFA = f.Here()
+	f.Comma(0)
+}
+
 // CFetch reads a byte from 64KB memory.
 func (f *Forth) CFetch(addr int) byte {
 	if addr < 0 || addr >= len(f.Memory) {

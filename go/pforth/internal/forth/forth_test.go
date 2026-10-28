@@ -1583,3 +1583,82 @@ func TestExecutionTokenDispatcher(t *testing.T) {
 	}()
 	_ = wPrim
 }
+
+func TestDefiningWords(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+
+	// CREATE
+	f.SetLine("MYBUF")
+	f.WordCreate()
+	xtBuf, ok := f.FindXT("MYBUF")
+	if !ok {
+		t.Fatal("CREATE MYBUF not found")
+	}
+	// Execute MYBUF -> pushes PFA (1024)
+	f.DSPush(Cell(xtBuf))
+	f.WordExecute()
+	if len(f.DS) != 1 || f.DSPop() != 1024 {
+		t.Fatal("MYBUF execute expected PFA=1024")
+	}
+	f.Allot(10) // Allot buffer bytes
+
+	// CONSTANT ( n -- )
+	f.DSPush(42)
+	f.SetLine("ANSWER")
+	f.WordConstant()
+	xtConst, ok := f.FindXT("ANSWER")
+	if !ok {
+		t.Fatal("CONSTANT ANSWER not found")
+	}
+	f.DSPush(Cell(xtConst))
+	f.WordExecute()
+	if len(f.DS) != 1 || f.DSPop() != 42 {
+		t.Fatal("ANSWER execute expected 42")
+	}
+
+	// VARIABLE ( -- )
+	f.SetLine("COUNTER")
+	f.WordVariable()
+	xtVar, ok := f.FindXT("COUNTER")
+	if !ok {
+		t.Fatal("VARIABLE COUNTER not found")
+	}
+	// Initial value at PFA should be 0
+	f.DSPush(Cell(xtVar))
+	f.WordExecute()
+	pfa := int(f.DSPop())
+	if f.Fetch(pfa) != 0 {
+		t.Fatalf("COUNTER initial value expected 0, got %d", f.Fetch(pfa))
+	}
+	// Store 99 and fetch
+	f.Store(pfa, 99)
+	if f.Fetch(pfa) != 99 {
+		t.Fatalf("COUNTER stored value expected 99, got %d", f.Fetch(pfa))
+	}
+
+	// Missing name panic
+	missingName := func(fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected panic on missing name")
+			}
+		}()
+		f.SetLine("")
+		fn()
+	}
+	missingName(func() { f.WordCreate() })
+	missingName(func() { f.DSPush(1); f.WordConstant() })
+	missingName(func() { f.WordVariable() })
+
+	// Underflow on CONSTANT
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected underflow panic on CONSTANT")
+			}
+		}()
+		f.SetLine("FAIL")
+		f.WordConstant()
+	}()
+}
