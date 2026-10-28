@@ -102,4 +102,45 @@ void Forth::bye() {
     running = false;
 }
 
+std::string Forth::read_line() {
+    std::string line;
+    if (!in || !std::getline(*in, line)) {
+        running = false;
+        return "";
+    }
+    if (!line.empty() && line.back() == '\r') {
+        line.pop_back();
+    }
+    return line;
+}
+
+void Forth::expect() {
+    Cell maxlen = pop_ds();
+    Cell addr = pop_ds();
+    std::string line = read_line();
+
+    size_t count = line.size();
+    if (maxlen > 0 && count > static_cast<size_t>(maxlen)) {
+        count = static_cast<size_t>(maxlen);
+    }
+
+    uint16_t uaddr = static_cast<uint16_t>(addr);
+    for (size_t i = 0; i < count; ++i) {
+        if (static_cast<size_t>(uaddr) + i < memory.size()) {
+            memory[uaddr + i] = static_cast<uint8_t>(line[i]);
+        }
+    }
+    if (static_cast<size_t>(uaddr) + count < memory.size()) {
+        memory[uaddr + count] = 0;
+    }
+
+    // SPAN variable is stored at address 1000 (little-endian 16-bit cell)
+    memory[1000] = static_cast<uint8_t>(count & 0xFF);
+    memory[1001] = static_cast<uint8_t>((count >> 8) & 0xFF);
+}
+
+void Forth::span() {
+    push_ds(1000);
+}
+
 } // namespace pforth

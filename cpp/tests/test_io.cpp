@@ -55,3 +55,49 @@ TEST_CASE("Console I/O - BYE sets running flag to false", "[io]") {
     f.bye();
     REQUIRE(f.running == false);
 }
+
+TEST_CASE("Line reader - EXPECT reads line, stores in memory, updates SPAN", "[io]") {
+    std::stringstream in("TEST LINE\n");
+    std::stringstream out;
+
+    pforth::Forth f(&in, &out);
+
+    // Buffer at 2000, maxlen 20
+    f.push_ds(2000);
+    f.push_ds(20);
+    f.expect();
+
+    // Verify memory contains "TEST LINE"
+    std::string result;
+    for (int i = 0; i < 9; ++i) {
+        result.push_back(static_cast<char>(f.memory[2000 + i]));
+    }
+    REQUIRE(result == "TEST LINE");
+
+    // Check SPAN variable address and value at 1000
+    f.span();
+    REQUIRE(f.pop_ds() == 1000);
+    uint16_t span_val = f.memory[1000] | (f.memory[1001] << 8);
+    REQUIRE(span_val == 9);
+}
+
+TEST_CASE("Line reader - EXPECT truncates to maxlen", "[io]") {
+    std::stringstream in("A VERY LONG STRING THAT EXCEEDS CAPACITY\n");
+    std::stringstream out;
+
+    pforth::Forth f(&in, &out);
+
+    // Buffer at 3000, maxlen 5
+    f.push_ds(3000);
+    f.push_ds(5);
+    f.expect();
+
+    std::string result;
+    for (int i = 0; i < 5; ++i) {
+        result.push_back(static_cast<char>(f.memory[3000 + i]));
+    }
+    REQUIRE(result == "A VER");
+
+    uint16_t span_val = f.memory[1000] | (f.memory[1001] << 8);
+    REQUIRE(span_val == 5);
+}
