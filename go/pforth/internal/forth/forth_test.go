@@ -2039,3 +2039,89 @@ func TestRuntimeBranchExecution(t *testing.T) {
 	}()
 	f.WordZeroBranch()
 }
+
+func TestConditionalBranchingCompiler(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+	f.InitPrimitives()
+
+	// 1. IF ... THEN without ELSE
+	f.InterpretLine(": TESTIF IF 999 THEN ;")
+	f.InterpretLine("0 TESTIF")
+	if len(f.DS) != 0 {
+		t.Fatalf("0 TESTIF expected empty stack, got %v", f.DS)
+	}
+	f.InterpretLine("-1 TESTIF")
+	if len(f.DS) != 1 || f.DSPop() != 999 {
+		t.Fatalf("-1 TESTIF expected 999, got %v", f.DS)
+	}
+
+	// 2. IF ... ELSE ... THEN
+	f.InterpretLine(": TESTELSE IF 100 ELSE 200 THEN ;")
+	f.InterpretLine("1 TESTELSE")
+	if len(f.DS) != 1 || f.DSPop() != 100 {
+		t.Fatalf("1 TESTELSE expected 100, got %v", f.DS)
+	}
+	f.InterpretLine("0 TESTELSE")
+	if len(f.DS) != 1 || f.DSPop() != 200 {
+		t.Fatalf("0 TESTELSE expected 200, got %v", f.DS)
+	}
+
+	// 3. Nested conditionals
+	f.InterpretLine(": NESTED IF IF 1 ELSE 2 THEN ELSE 3 THEN ;")
+	f.InterpretLine("1 1 NESTED")
+	if f.DSPop() != 1 {
+		t.Fatal("NESTED 1 1 failed")
+	}
+	f.InterpretLine("0 1 NESTED")
+	if f.DSPop() != 2 {
+		t.Fatal("NESTED 0 1 failed")
+	}
+	f.InterpretLine("1 0 NESTED")
+	if f.DSPop() != 3 {
+		t.Fatal("NESTED 1 0 failed")
+	}
+	f.InterpretLine("0 0 NESTED")
+	if f.DSPop() != 3 {
+		t.Fatal("NESTED 0 0 failed")
+	}
+
+	// 4. Compilation error checks
+	expectPanic := func(name string, fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatalf("%s expected panic", name)
+			}
+		}()
+		fn()
+	}
+
+	expectPanic("IF when not compiling", func() {
+		f.State = false
+		f.WordIF()
+	})
+
+	expectPanic("THEN when not compiling", func() {
+		f.State = false
+		f.WordTHEN()
+	})
+
+	expectPanic("ELSE when not compiling", func() {
+		f.State = false
+		f.WordELSE()
+	})
+
+	expectPanic("THEN invalid target", func() {
+		f.State = true
+		f.DSPush(9999)
+		f.WordTHEN()
+	})
+	f.State = false
+
+	expectPanic("ELSE invalid target", func() {
+		f.State = true
+		f.DSPush(9999)
+		f.WordELSE()
+	})
+	f.State = false
+}
