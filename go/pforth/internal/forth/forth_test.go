@@ -1447,3 +1447,67 @@ func TestDictionaryStructureAndLookup(t *testing.T) {
 	underflow(func() { f.WordFind() })
 	underflow(func() { f.WordToBody() })
 }
+
+func TestDictionaryMemoryAllocationPointers(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+
+	// DP ( -- addr )
+	f.WordDP()
+	if len(f.DS) != 1 || f.DSPop() != Cell(DPAddr) {
+		t.Fatalf("DP expected %d", DPAddr)
+	}
+
+	// HERE initial
+	f.WordHere()
+	if len(f.DS) != 1 || f.DSPop() != 1024 {
+		t.Fatal("HERE initial expected 1024")
+	}
+
+	// ALLOT 10
+	f.DSPush(10)
+	f.WordAllot()
+	if f.Here() != 1034 {
+		t.Fatalf("ALLOT 10 expected HERE=1034, got %d", f.Here())
+	}
+
+	// , ( n -- )
+	f.DSPush(0x1234)
+	f.WordComma()
+	if f.Here() != 1036 {
+		t.Fatalf(", expected HERE=1036, got %d", f.Here())
+	}
+	if f.Fetch(1034) != 0x1234 {
+		t.Fatalf(", stored value mismatch, got 0x%x", f.Fetch(1034))
+	}
+
+	// C, ( c -- )
+	f.DSPush(0x55)
+	f.WordCComma()
+	if f.Here() != 1037 {
+		t.Fatalf("C, expected HERE=1037, got %d", f.Here())
+	}
+	if f.CFetch(1036) != 0x55 {
+		t.Fatalf("C, stored value mismatch, got 0x%x", f.CFetch(1036))
+	}
+
+	// PAD ( -- addr ) (HERE + 68)
+	f.WordPAD()
+	if len(f.DS) != 1 || f.DSPop() != Cell(1037+68) {
+		t.Fatalf("PAD expected %d", 1037+68)
+	}
+
+	// Underflow tests
+	underflow := func(fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected underflow panic")
+			}
+		}()
+		fn()
+	}
+
+	underflow(func() { f.WordAllot() })
+	underflow(func() { f.WordComma() })
+	underflow(func() { f.WordCComma() })
+}
