@@ -1027,3 +1027,68 @@ func TestArithmeticScalingAndHelperWords(t *testing.T) {
 	underflow(func() { f.WordMax() })
 	underflow(func() { f.DSPush(1); f.WordMax() })
 }
+
+func TestBitwiseLogicPrimitives(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+
+	// AND
+	f.DSPush(0x00FF)
+	f.DSPush(0x0F0F)
+	f.WordAnd()
+	if len(f.DS) != 1 || f.DSPop() != 0x000F {
+		t.Fatal("AND failed")
+	}
+
+	// OR
+	f.DSPush(0x00F0)
+	f.DSPush(0x000F)
+	f.WordOr()
+	if len(f.DS) != 1 || f.DSPop() != 0x00FF {
+		t.Fatal("OR failed")
+	}
+
+	// XOR
+	f.DSPush(0x00FF)
+	f.DSPush(0x000F)
+	f.WordXor()
+	if len(f.DS) != 1 || f.DSPop() != 0x00F0 {
+		t.Fatal("XOR failed")
+	}
+	f.DSPush(42)
+	f.DSPush(42)
+	f.WordXor()
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatal("XOR identical failed")
+	}
+
+	// INVERT
+	f.DSPush(0)
+	f.WordInvert()
+	if len(f.DS) != 1 || f.DSPop() != -1 {
+		t.Fatal("INVERT 0 failed")
+	}
+	f.DSPush(-1)
+	f.WordInvert()
+	if len(f.DS) != 1 || f.DSPop() != 0 {
+		t.Fatal("INVERT -1 failed")
+	}
+
+	// Underflow tests
+	underflow := func(fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected underflow panic")
+			}
+		}()
+		fn()
+	}
+
+	underflow(func() { f.WordAnd() })
+	underflow(func() { f.DSPush(1); f.WordAnd() })
+	underflow(func() { f.WordOr() })
+	underflow(func() { f.DSPush(1); f.WordOr() })
+	underflow(func() { f.WordXor() })
+	underflow(func() { f.DSPush(1); f.WordXor() })
+	underflow(func() { f.WordInvert() })
+}
