@@ -152,6 +152,47 @@ func (f *Forth) Store(addr int, val Cell) {
 	f.Memory[addr+1] = byte((u >> 8) & 0xFF)
 }
 
+// WordFetch pops addr and pushes 16-bit cell from memory: @ ( addr -- n )
+func (f *Forth) WordFetch() {
+	addr := int(f.DSPop())
+	f.DSPush(f.Fetch(addr))
+}
+
+// WordStore pops addr and val, writing 16-bit cell to memory: ! ( n addr -- )
+func (f *Forth) WordStore() {
+	addr := int(f.DSPop())
+	val := f.DSPop()
+	f.Store(addr, val)
+}
+
+// WordCFetch pops addr and pushes single byte from memory: C@ ( addr -- c )
+func (f *Forth) WordCFetch() {
+	addr := int(f.DSPop())
+	f.DSPush(Cell(f.CFetch(addr)))
+}
+
+// WordCStore pops addr and byte, writing byte to memory: C! ( c addr -- )
+func (f *Forth) WordCStore() {
+	addr := int(f.DSPop())
+	val := byte(f.DSPop() & 0xFF)
+	f.CStore(addr, val)
+}
+
+// WordPlusStore pops addr and n, adding n to the 16-bit cell at addr: +! ( n addr -- )
+func (f *Forth) WordPlusStore() {
+	addr := int(f.DSPop())
+	n := f.DSPop()
+	cur := f.Fetch(addr)
+	f.Store(addr, cur+n)
+}
+
+// WordQuestion pops addr, fetches cell at addr and prints it followed by space: ? ( addr -- )
+func (f *Forth) WordQuestion() {
+	addr := int(f.DSPop())
+	val := f.Fetch(addr)
+	f.EmitStr(fmt.Sprintf("%d ", val))
+}
+
 // WordSpan pushes the address of the SPAN system variable onto the stack.
 func (f *Forth) WordSpan() {
 	f.DSPush(Cell(SpanAddr))
