@@ -91,3 +91,79 @@ TEST_CASE("Arithmetic - NEGATE", "[arithmetic]") {
 
     REQUIRE_THROWS_WITH(f.word_negate(), "DATA STACK UNDERFLOW");
 }
+
+TEST_CASE("Arithmetic - Scaling and increments (1+, 1-, 2+, 2-, 2*, 2/)", "[arithmetic]") {
+    pforth::Forth f;
+
+    // 1+ and 1-
+    f.push_ds(10);
+    f.word_one_plus();
+    REQUIRE(f.pop_ds() == 11);
+
+    f.push_ds(10);
+    f.word_one_minus();
+    REQUIRE(f.pop_ds() == 9);
+
+    // 2+ and 2-
+    f.push_ds(20);
+    f.word_two_plus();
+    REQUIRE(f.pop_ds() == 22);
+
+    f.push_ds(20);
+    f.word_two_minus();
+    REQUIRE(f.pop_ds() == 18);
+
+    // 2* (left shift)
+    f.push_ds(7);
+    f.word_two_star();
+    REQUIRE(f.pop_ds() == 14);
+
+    f.push_ds(-5);
+    f.word_two_star();
+    REQUIRE(f.pop_ds() == -10);
+
+    // 2/ (arithmetic right shift)
+    f.push_ds(14);
+    f.word_two_slash();
+    REQUIRE(f.pop_ds() == 7);
+
+    f.push_ds(-10);
+    f.word_two_slash();
+    REQUIRE(f.pop_ds() == -5);
+}
+
+TEST_CASE("Arithmetic - ABS, MIN, and MAX", "[arithmetic]") {
+    pforth::Forth f;
+
+    // ABS
+    f.push_ds(-42);
+    f.word_abs();
+    REQUIRE(f.pop_ds() == 42);
+
+    f.push_ds(100);
+    f.word_abs();
+    REQUIRE(f.pop_ds() == 100);
+
+    // MIN
+    f.push_ds(10);
+    f.push_ds(20);
+    f.word_min();
+    REQUIRE(f.pop_ds() == 10);
+
+    f.push_ds(-15);
+    f.push_ds(-5);
+    f.word_min();
+    REQUIRE(f.pop_ds() == -15);
+
+    // MAX
+    f.push_ds(10);
+    f.push_ds(20);
+    f.word_max();
+    REQUIRE(f.pop_ds() == 20);
+
+    f.push_ds(-15);
+    f.push_ds(-5);
+    f.word_max();
+    REQUIRE(f.pop_ds() == -5);
+}
+
