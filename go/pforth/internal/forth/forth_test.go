@@ -908,3 +908,122 @@ func TestBasicArithmeticAndDivisionPrimitives(t *testing.T) {
 	underflow(func() { f.DSPush(1); f.WordMod() })
 	underflow(func() { f.WordNegate() })
 }
+
+func TestArithmeticScalingAndHelperWords(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+
+	// 1+
+	f.DSPush(5)
+	f.WordOnePlus()
+	if len(f.DS) != 1 || f.DSPop() != 6 {
+		t.Fatal("1+ failed")
+	}
+
+	// 1-
+	f.DSPush(5)
+	f.WordOneMinus()
+	if len(f.DS) != 1 || f.DSPop() != 4 {
+		t.Fatal("1- failed")
+	}
+
+	// 2+
+	f.DSPush(5)
+	f.WordTwoPlus()
+	if len(f.DS) != 1 || f.DSPop() != 7 {
+		t.Fatal("2+ failed")
+	}
+
+	// 2-
+	f.DSPush(5)
+	f.WordTwoMinus()
+	if len(f.DS) != 1 || f.DSPop() != 3 {
+		t.Fatal("2- failed")
+	}
+
+	// 2*
+	f.DSPush(5)
+	f.WordTwoStar()
+	if len(f.DS) != 1 || f.DSPop() != 10 {
+		t.Fatal("2* failed")
+	}
+	f.DSPush(-3)
+	f.WordTwoStar()
+	if len(f.DS) != 1 || f.DSPop() != -6 {
+		t.Fatal("2* negative failed")
+	}
+
+	// 2/
+	f.DSPush(10)
+	f.WordTwoSlash()
+	if len(f.DS) != 1 || f.DSPop() != 5 {
+		t.Fatal("2/ failed")
+	}
+	f.DSPush(-6)
+	f.WordTwoSlash()
+	if len(f.DS) != 1 || f.DSPop() != -3 {
+		t.Fatal("2/ negative failed")
+	}
+
+	// ABS
+	f.DSPush(-5)
+	f.WordAbs()
+	if len(f.DS) != 1 || f.DSPop() != 5 {
+		t.Fatal("ABS negative failed")
+	}
+	f.DSPush(5)
+	f.WordAbs()
+	if len(f.DS) != 1 || f.DSPop() != 5 {
+		t.Fatal("ABS positive failed")
+	}
+
+	// MIN
+	f.DSPush(10)
+	f.DSPush(20)
+	f.WordMin()
+	if len(f.DS) != 1 || f.DSPop() != 10 {
+		t.Fatal("MIN failed")
+	}
+	f.DSPush(-5)
+	f.DSPush(-10)
+	f.WordMin()
+	if len(f.DS) != 1 || f.DSPop() != -10 {
+		t.Fatal("MIN negative failed")
+	}
+
+	// MAX
+	f.DSPush(10)
+	f.DSPush(20)
+	f.WordMax()
+	if len(f.DS) != 1 || f.DSPop() != 20 {
+		t.Fatal("MAX failed")
+	}
+	f.DSPush(-5)
+	f.DSPush(-10)
+	f.WordMax()
+	if len(f.DS) != 1 || f.DSPop() != -5 {
+		t.Fatal("MAX negative failed")
+	}
+
+	// Underflow tests
+	underflow := func(fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected underflow panic")
+			}
+		}()
+		fn()
+	}
+
+	underflow(func() { f.WordOnePlus() })
+	underflow(func() { f.WordOneMinus() })
+	underflow(func() { f.WordTwoPlus() })
+	underflow(func() { f.WordTwoMinus() })
+	underflow(func() { f.WordTwoStar() })
+	underflow(func() { f.WordTwoSlash() })
+	underflow(func() { f.WordAbs() })
+	underflow(func() { f.WordMin() })
+	underflow(func() { f.DSPush(1); f.WordMin() })
+	underflow(func() { f.WordMax() })
+	underflow(func() { f.DSPush(1); f.WordMax() })
+}

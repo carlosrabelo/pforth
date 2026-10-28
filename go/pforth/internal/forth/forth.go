@@ -306,6 +306,74 @@ func (f *Forth) WordNegate() {
 	f.DSPush(-n)
 }
 
+// WordOnePlus increments top of stack by 1: 1+ ( n -- n+1 )
+func (f *Forth) WordOnePlus() {
+	n := f.DSPop()
+	f.DSPush(n + 1)
+}
+
+// WordOneMinus decrements top of stack by 1: 1- ( n -- n-1 )
+func (f *Forth) WordOneMinus() {
+	n := f.DSPop()
+	f.DSPush(n - 1)
+}
+
+// WordTwoPlus increments top of stack by 2: 2+ ( n -- n+2 )
+func (f *Forth) WordTwoPlus() {
+	n := f.DSPop()
+	f.DSPush(n + 2)
+}
+
+// WordTwoMinus decrements top of stack by 2: 2- ( n -- n-2 )
+func (f *Forth) WordTwoMinus() {
+	n := f.DSPop()
+	f.DSPush(n - 2)
+}
+
+// WordTwoStar multiplies top of stack by 2: 2* ( n -- n*2 )
+func (f *Forth) WordTwoStar() {
+	n := f.DSPop()
+	f.DSPush(n << 1)
+}
+
+// WordTwoSlash divides top of stack by 2: 2/ ( n -- n/2 )
+func (f *Forth) WordTwoSlash() {
+	n := f.DSPop()
+	f.DSPush(n >> 1)
+}
+
+// WordAbs pushes absolute value of signed cell: ABS ( n -- |n| )
+func (f *Forth) WordAbs() {
+	n := f.DSPop()
+	if n < 0 {
+		f.DSPush(-n)
+	} else {
+		f.DSPush(n)
+	}
+}
+
+// WordMin pushes minimum of two signed integers: MIN ( a b -- min )
+func (f *Forth) WordMin() {
+	b := f.DSPop()
+	a := f.DSPop()
+	if a < b {
+		f.DSPush(a)
+	} else {
+		f.DSPush(b)
+	}
+}
+
+// WordMax pushes maximum of two signed integers: MAX ( a b -- max )
+func (f *Forth) WordMax() {
+	b := f.DSPop()
+	a := f.DSPop()
+	if a > b {
+		f.DSPush(a)
+	} else {
+		f.DSPush(b)
+	}
+}
+
 // CFetch reads a byte from 64KB memory.
 func (f *Forth) CFetch(addr int) byte {
 	if addr < 0 || addr >= len(f.Memory) {
