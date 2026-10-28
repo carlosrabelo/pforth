@@ -436,6 +436,86 @@ void Forth::word_invert() {
     push_ds(static_cast<Cell>(~n));
 }
 
+void Forth::word_equals() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    push_ds(a == b ? -1 : 0);
+}
+
+void Forth::word_not_equals() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    push_ds(a != b ? -1 : 0);
+}
+
+void Forth::word_less() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    push_ds(a < b ? -1 : 0);
+}
+
+void Forth::word_greater() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    push_ds(a > b ? -1 : 0);
+}
+
+void Forth::word_less_equal() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    push_ds(a <= b ? -1 : 0);
+}
+
+void Forth::word_greater_equal() {
+    Cell b = pop_ds();
+    Cell a = pop_ds();
+    push_ds(a >= b ? -1 : 0);
+}
+
+void Forth::word_zero_equals() {
+    Cell n = pop_ds();
+    push_ds(n == 0 ? -1 : 0);
+}
+
+void Forth::word_zero_not_equals() {
+    Cell n = pop_ds();
+    push_ds(n != 0 ? -1 : 0);
+}
+
+void Forth::word_zero_less() {
+    Cell n = pop_ds();
+    push_ds(n < 0 ? -1 : 0);
+}
+
+void Forth::word_zero_greater() {
+    Cell n = pop_ds();
+    push_ds(n > 0 ? -1 : 0);
+}
+
+void Forth::word_u_less() {
+    uint16_t b = static_cast<uint16_t>(pop_ds());
+    uint16_t a = static_cast<uint16_t>(pop_ds());
+    push_ds(a < b ? -1 : 0);
+}
+
+void Forth::word_u_greater() {
+    uint16_t b = static_cast<uint16_t>(pop_ds());
+    uint16_t a = static_cast<uint16_t>(pop_ds());
+    push_ds(a > b ? -1 : 0);
+}
+
+void Forth::word_u_less_equal() {
+    uint16_t b = static_cast<uint16_t>(pop_ds());
+    uint16_t a = static_cast<uint16_t>(pop_ds());
+    push_ds(a <= b ? -1 : 0);
+}
+
+void Forth::word_u_greater_equal() {
+    uint16_t b = static_cast<uint16_t>(pop_ds());
+    uint16_t a = static_cast<uint16_t>(pop_ds());
+    push_ds(a >= b ? -1 : 0);
+}
+
 void Forth::key() {
     char c = 0;
     if (in && in->get(c)) {

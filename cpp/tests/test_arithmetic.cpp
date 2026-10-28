@@ -203,4 +203,129 @@ TEST_CASE("Arithmetic - Bitwise logic (AND, OR, XOR, INVERT)", "[arithmetic]") {
     REQUIRE_THROWS_WITH(f.word_and(), "DATA STACK UNDERFLOW");
 }
 
+TEST_CASE("Arithmetic - Relational and Equality (=, <>, <, >, <=, >=)", "[arithmetic]") {
+    pforth::Forth f;
+
+    // =
+    f.push_ds(42);
+    f.push_ds(42);
+    f.word_equals();
+    REQUIRE(f.pop_ds() == -1);
+
+    f.push_ds(42);
+    f.push_ds(43);
+    f.word_equals();
+    REQUIRE(f.pop_ds() == 0);
+
+    // <>
+    f.push_ds(42);
+    f.push_ds(43);
+    f.word_not_equals();
+    REQUIRE(f.pop_ds() == -1);
+
+    f.push_ds(42);
+    f.push_ds(42);
+    f.word_not_equals();
+    REQUIRE(f.pop_ds() == 0);
+
+    // Signed < and >
+    f.push_ds(-1);
+    f.push_ds(1);
+    f.word_less();
+    REQUIRE(f.pop_ds() == -1); // -1 < 1 is true
+
+    f.push_ds(-1);
+    f.push_ds(1);
+    f.word_greater();
+    REQUIRE(f.pop_ds() == 0); // -1 > 1 is false
+
+    // Signed <= and >=
+    f.push_ds(5);
+    f.push_ds(5);
+    f.word_less_equal();
+    REQUIRE(f.pop_ds() == -1);
+
+    f.push_ds(5);
+    f.push_ds(5);
+    f.word_greater_equal();
+    REQUIRE(f.pop_ds() == -1);
+
+    f.push_ds(6);
+    f.push_ds(5);
+    f.word_less_equal();
+    REQUIRE(f.pop_ds() == 0);
+}
+
+TEST_CASE("Arithmetic - Zero Comparisons (0=, 0<>, 0<, 0>)", "[arithmetic]") {
+    pforth::Forth f;
+
+    // 0=
+    f.push_ds(0);
+    f.word_zero_equals();
+    REQUIRE(f.pop_ds() == -1);
+
+    f.push_ds(5);
+    f.word_zero_equals();
+    REQUIRE(f.pop_ds() == 0);
+
+    // 0<>
+    f.push_ds(5);
+    f.word_zero_not_equals();
+    REQUIRE(f.pop_ds() == -1);
+
+    f.push_ds(0);
+    f.word_zero_not_equals();
+    REQUIRE(f.pop_ds() == 0);
+
+    // 0< and 0>
+    f.push_ds(-10);
+    f.word_zero_less();
+    REQUIRE(f.pop_ds() == -1);
+
+    f.push_ds(10);
+    f.word_zero_less();
+    REQUIRE(f.pop_ds() == 0);
+
+    f.push_ds(10);
+    f.word_zero_greater();
+    REQUIRE(f.pop_ds() == -1);
+
+    f.push_ds(-10);
+    f.word_zero_greater();
+    REQUIRE(f.pop_ds() == 0);
+}
+
+TEST_CASE("Arithmetic - Unsigned Comparisons (U<, U>, U<=, U>=)", "[arithmetic]") {
+    pforth::Forth f;
+
+    // -1 is 0xFFFF (65535 unsigned)
+    // 65535 U> 1 is true (-1), but signed -1 > 1 is false (0)
+    f.push_ds(-1);
+    f.push_ds(1);
+    f.word_u_greater();
+    REQUIRE(f.pop_ds() == -1);
+
+    f.push_ds(-1);
+    f.push_ds(1);
+    f.word_u_less();
+    REQUIRE(f.pop_ds() == 0);
+
+    // U<= and U>=
+    f.push_ds(100);
+    f.push_ds(100);
+    f.word_u_less_equal();
+    REQUIRE(f.pop_ds() == -1);
+
+    f.push_ds(100);
+    f.push_ds(100);
+    f.word_u_greater_equal();
+    REQUIRE(f.pop_ds() == -1);
+
+    f.push_ds(100);
+    f.push_ds(200);
+    f.word_u_less_equal();
+    REQUIRE(f.pop_ds() == -1);
+}
+
+
 
