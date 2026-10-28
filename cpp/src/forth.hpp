@@ -227,6 +227,11 @@ public:
     void word_branch();      // BRANCH
     void word_zero_branch(); // 0BRANCH
 
+    // Spec 007.2 Conditional Branching Compiler
+    void word_if();   // IF
+    void word_then(); // THEN
+    void word_else(); // ELSE
+
     // Spec 001.2 Console I/O Primitives
     void key();
     void emit();
