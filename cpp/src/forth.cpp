@@ -17,6 +17,7 @@ Forth::Forth(std::istream* input, std::ostream* output)
     memory.fill(0);
     store_cell(1002, 1024);
     dp = 1024;
+    store_cell(1004, 10);
     init_primitives();
 }
 
@@ -874,6 +875,118 @@ void Forth::word_variable() {
     allot(2);
 }
 
+int Forth::get_base() const {
+    return fetch_cell(1004);
+}
+
+void Forth::set_base(int b) {
+    store_cell(1004, static_cast<Cell>(b));
+}
+
+bool Forth::parse_number(const std::string& token, Cell& out_val) const {
+    if (token.empty()) {
+        return false;
+    }
+    int cur_base = get_base();
+    if (cur_base <= 0) {
+        cur_base = 10;
+    }
+    bool neg = false;
+    size_t start = 0;
+    if (token[0] == '-') {
+        neg = true;
+        start = 1;
+    } else if (token[0] == '+') {
+        start = 1;
+    }
+    if (start >= token.size()) {
+        return false;
+    }
+    int parsed_base = cur_base;
+    if (token[start] == '$') {
+        parsed_base = 16;
+        start++;
+    } else if (token[start] == '%') {
+        parsed_base = 2;
+        start++;
+    } else if (token[start] == '#') {
+        start++;
+        if (start < token.size() && token[start] == '#') {
+            start++;
+        }
+    }
+    if (start >= token.size()) {
+        return false;
+    }
+    uint32_t val = 0;
+    for (size_t i = start; i < token.size(); ++i) {
+        char c = token[i];
+        int digit = -1;
+        if (c >= '0' && c <= '9') {
+            digit = c - '0';
+        } else if (c >= 'A' && c <= 'F') {
+            digit = c - 'A' + 10;
+        } else if (c >= 'a' && c <= 'f') {
+            digit = c - 'a' + 10;
+        } else {
+            return false;
+        }
+        if (digit >= parsed_base) {
+            return false;
+        }
+        val = val * parsed_base + digit;
+    }
+    Cell result = static_cast<Cell>(val & 0xFFFF);
+    out_val = neg ? static_cast<Cell>(-result) : result;
+    return true;
+}
+
+void Forth::word_word() {
+    Cell delim_cell = pop_ds();
+    char delim = static_cast<char>(delim_cell & 0xFF);
+    while (in_ptr < tib.size() && tib[in_ptr] == delim) {
+        in_ptr++;
+    }
+    uint32_t dest = static_cast<uint16_t>(here());
+    if (in_ptr >= tib.size()) {
+        c_store(dest, 0);
+        push_ds(static_cast<Cell>(dest));
+        return;
+    }
+    uint32_t start = dest + 1;
+    uint8_t count = 0;
+    while (in_ptr < tib.size() && tib[in_ptr] != delim && tib[in_ptr] != '\r' && tib[in_ptr] != '\n') {
+        c_store(start + count, static_cast<uint8_t>(tib[in_ptr]));
+        count++;
+        in_ptr++;
+    }
+    c_store(dest, count);
+    c_store(start + count, ' ');
+    push_ds(static_cast<Cell>(dest));
+}
+
+void Forth::word_number() {
+    Cell addr = pop_ds();
+    uint32_t uaddr = static_cast<uint16_t>(addr);
+    uint8_t len = c_fetch(uaddr);
+    std::string token;
+    for (uint8_t i = 0; i < len; ++i) {
+        token += static_cast<char>(c_fetch(uaddr + 1 + i));
+    }
+    Cell num = 0;
+    if (parse_number(token, num)) {
+        push_ds(num);
+        push_ds(-1); // success
+    } else {
+        push_ds(0);
+        push_ds(0);  // failure
+    }
+}
+
+void Forth::word_base() {
+    push_ds(1004);
+}
+
 void Forth::init_primitives() {
     define_primitive("DUP", [](Forth* f) { f->word_dup(); });
     define_primitive("DROP", [](Forth* f) { f->word_drop(); });
@@ -970,6 +1083,10 @@ void Forth::init_primitives() {
     define_primitive("CREATE", [](Forth* f) { f->word_create(); });
     define_primitive("CONSTANT", [](Forth* f) { f->word_constant(); });
     define_primitive("VARIABLE", [](Forth* f) { f->word_variable(); });
+
+    define_primitive("WORD", [](Forth* f) { f->word_word(); });
+    define_primitive("NUMBER", [](Forth* f) { f->word_number(); });
+    define_primitive("BASE", [](Forth* f) { f->word_base(); });
 }
 
 } // namespace pforth

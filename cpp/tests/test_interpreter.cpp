@@ -1,0 +1,104 @@
+#include "catch.hpp"
+#include "forth.hpp"
+
+TEST_CASE("Interpreter - BASE variable", "[interpreter]") {
+    pforth::Forth f;
+
+    // BASE pushes 1004
+    f.word_base();
+    REQUIRE(f.pop_ds() == 1004);
+    REQUIRE(f.get_base() == 10);
+
+    // Change BASE to 16
+    f.push_ds(16);
+    f.push_ds(1004);
+    f.word_store();
+    REQUIRE(f.get_base() == 16);
+}
+
+TEST_CASE("Interpreter - Number parsing", "[interpreter]") {
+    pforth::Forth f;
+    pforth::Cell val = 0;
+
+    // Decimal
+    REQUIRE(f.parse_number("123", val));
+    REQUIRE(val == 123);
+
+    REQUIRE(f.parse_number("-456", val));
+    REQUIRE(val == -456);
+
+    REQUIRE(f.parse_number("+789", val));
+    REQUIRE(val == 789);
+
+    // Hex prefix $
+    REQUIRE(f.parse_number("$1F", val));
+    REQUIRE(val == 31);
+
+    REQUIRE(f.parse_number("-$10", val));
+    REQUIRE(val == -16);
+
+    // Binary prefix %
+    REQUIRE(f.parse_number("%1010", val));
+    REQUIRE(val == 10);
+
+    // Current base = 16
+    f.set_base(16);
+    REQUIRE(f.parse_number("FF", val));
+    REQUIRE(val == 255);
+
+    // Current base = 8
+    f.set_base(8);
+    REQUIRE(f.parse_number("77", val));
+    REQUIRE(val == 63);
+
+    // Invalid numbers
+    f.set_base(10);
+    REQUIRE_FALSE(f.parse_number("ABC", val));
+    REQUIRE_FALSE(f.parse_number("", val));
+    REQUIRE_FALSE(f.parse_number("-", val));
+}
+
+TEST_CASE("Interpreter - WORD and NUMBER primitives", "[interpreter]") {
+    pforth::Forth f;
+
+    // WORD ( delim -- addr )
+    f.tib = "   HELLO   WORLD";
+    f.in_ptr = 0;
+    f.push_ds(' ');
+    f.word_word();
+    REQUIRE(f.ds.size() == 1);
+    pforth::Cell addr = f.pop_ds();
+    REQUIRE(addr == f.here());
+    REQUIRE(f.c_fetch(addr) == 5);
+    std::string word_read;
+    for (int i = 0; i < 5; ++i) {
+        word_read += static_cast<char>(f.c_fetch(addr + 1 + i));
+    }
+    REQUIRE(word_read == "HELLO");
+
+    // NUMBER ( addr -- n flag )
+    // Write counted string at address 4000: len 4, "1234"
+    f.c_store(4000, 4);
+    f.c_store(4001, '1');
+    f.c_store(4002, '2');
+    f.c_store(4003, '3');
+    f.c_store(4004, '4');
+
+    f.push_ds(4000);
+    f.word_number();
+    REQUIRE(f.ds.size() == 2);
+    REQUIRE(f.pop_ds() == -1); // success
+    REQUIRE(f.pop_ds() == 1234);
+
+    // Non-number: "XYZ"
+    f.c_store(4010, 3);
+    f.c_store(4011, 'X');
+    f.c_store(4012, 'Y');
+    f.c_store(4013, 'Z');
+
+    f.push_ds(4010);
+    f.word_number();
+    REQUIRE(f.ds.size() == 2);
+    REQUIRE(f.pop_ds() == 0); // failure
+    REQUIRE(f.pop_ds() == 0);
+}
