@@ -401,6 +401,107 @@ func (f *Forth) WordInvert() {
 	f.DSPush(^n)
 }
 
+func boolCell(b bool) Cell {
+	if b {
+		return -1
+	}
+	return 0
+}
+
+// WordEquals pops a and b, pushing -1 if a == b else 0: = ( a b -- flag )
+func (f *Forth) WordEquals() {
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(boolCell(a == b))
+}
+
+// WordNotEquals pops a and b, pushing -1 if a != b else 0: <> ( a b -- flag )
+func (f *Forth) WordNotEquals() {
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(boolCell(a != b))
+}
+
+// WordLess pops a and b, pushing -1 if signed a < b else 0: < ( a b -- flag )
+func (f *Forth) WordLess() {
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(boolCell(a < b))
+}
+
+// WordGreater pops a and b, pushing -1 if signed a > b else 0: > ( a b -- flag )
+func (f *Forth) WordGreater() {
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(boolCell(a > b))
+}
+
+// WordLessEqual pops a and b, pushing -1 if signed a <= b else 0: <= ( a b -- flag )
+func (f *Forth) WordLessEqual() {
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(boolCell(a <= b))
+}
+
+// WordGreaterEqual pops a and b, pushing -1 if signed a >= b else 0: >= ( a b -- flag )
+func (f *Forth) WordGreaterEqual() {
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(boolCell(a >= b))
+}
+
+// WordZeroEquals pops n, pushing -1 if n == 0 else 0: 0= ( n -- flag )
+func (f *Forth) WordZeroEquals() {
+	n := f.DSPop()
+	f.DSPush(boolCell(n == 0))
+}
+
+// WordZeroNotEquals pops n, pushing -1 if n != 0 else 0: 0<> ( n -- flag )
+func (f *Forth) WordZeroNotEquals() {
+	n := f.DSPop()
+	f.DSPush(boolCell(n != 0))
+}
+
+// WordZeroLess pops n, pushing -1 if signed n < 0 else 0: 0< ( n -- flag )
+func (f *Forth) WordZeroLess() {
+	n := f.DSPop()
+	f.DSPush(boolCell(n < 0))
+}
+
+// WordZeroGreater pops n, pushing -1 if signed n > 0 else 0: 0> ( n -- flag )
+func (f *Forth) WordZeroGreater() {
+	n := f.DSPop()
+	f.DSPush(boolCell(n > 0))
+}
+
+// WordULess pops a and b, pushing -1 if unsigned a < b else 0: U< ( a b -- flag )
+func (f *Forth) WordULess() {
+	b := uint16(f.DSPop())
+	a := uint16(f.DSPop())
+	f.DSPush(boolCell(a < b))
+}
+
+// WordUGreater pops a and b, pushing -1 if unsigned a > b else 0: U> ( a b -- flag )
+func (f *Forth) WordUGreater() {
+	b := uint16(f.DSPop())
+	a := uint16(f.DSPop())
+	f.DSPush(boolCell(a > b))
+}
+
+// WordULessEqual pops a and b, pushing -1 if unsigned a <= b else 0: U<= ( a b -- flag )
+func (f *Forth) WordULessEqual() {
+	b := uint16(f.DSPop())
+	a := uint16(f.DSPop())
+	f.DSPush(boolCell(a <= b))
+}
+
+// WordUGreaterEqual pops a and b, pushing -1 if unsigned a >= b else 0: U>= ( a b -- flag )
+func (f *Forth) WordUGreaterEqual() {
+	b := uint16(f.DSPop())
+	a := uint16(f.DSPop())
+	f.DSPush(boolCell(a >= b))
+}
+
 // CFetch reads a byte from 64KB memory.
 func (f *Forth) CFetch(addr int) byte {
 	if addr < 0 || addr >= len(f.Memory) {
