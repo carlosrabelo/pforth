@@ -1,4 +1,5 @@
 #include "forth.hpp"
+#include <cctype>
 #include <csignal>
 
 namespace pforth {
@@ -14,6 +15,7 @@ static void sigint_handler(int) {
 Forth::Forth(std::istream* input, std::ostream* output)
     : in(input), out(output) {
     memory.fill(0);
+    init_primitives();
 }
 
 Forth::~Forth() {
@@ -639,6 +641,205 @@ void Forth::quit() {
     while (running) {
         repl_step();
     }
+}
+
+Word* Forth::define_word(const std::string& name, WordType type, XTCode code, const std::vector<Cell>& body, bool immediate) {
+    std::string upper_name;
+    for (char c : name) {
+        upper_name += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    }
+    int idx = static_cast<int>(words.size());
+    Word w{upper_name, immediate, type, std::move(code), body, dp};
+    words.push_back(std::move(w));
+    words_by_name[upper_name] = idx;
+    latest = idx;
+    return &words.back();
+}
+
+Word* Forth::define_primitive(const std::string& name, XTCode code) {
+    return define_word(name, WordType::Primitive, std::move(code), {}, false);
+}
+
+Word* Forth::define_immediate(const std::string& name, XTCode code) {
+    return define_word(name, WordType::Primitive, std::move(code), {}, true);
+}
+
+Word* Forth::lookup(const std::string& name) {
+    std::string upper_name;
+    for (char c : name) {
+        upper_name += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    }
+    auto it = words_by_name.find(upper_name);
+    if (it == words_by_name.end()) {
+        return nullptr;
+    }
+    return &words[it->second];
+}
+
+int Forth::find_xt(const std::string& name) const {
+    std::string upper_name;
+    for (char c : name) {
+        upper_name += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    }
+    auto it = words_by_name.find(upper_name);
+    if (it == words_by_name.end()) {
+        return -1;
+    }
+    return it->second;
+}
+
+Word* Forth::latest_word() {
+    if (latest < 0 || static_cast<size_t>(latest) >= words.size()) {
+        return nullptr;
+    }
+    return &words[latest];
+}
+
+bool Forth::parse_word(std::string& word_out) {
+    while (in_ptr < tib.size() && (tib[in_ptr] == ' ' || tib[in_ptr] == '\t' || tib[in_ptr] == '\r' || tib[in_ptr] == '\n')) {
+        in_ptr++;
+    }
+    if (in_ptr >= tib.size()) {
+        return false;
+    }
+    size_t start = in_ptr;
+    while (in_ptr < tib.size() && tib[in_ptr] != ' ' && tib[in_ptr] != '\t' && tib[in_ptr] != '\r' && tib[in_ptr] != '\n') {
+        in_ptr++;
+    }
+    word_out = tib.substr(start, in_ptr - start);
+    return true;
+}
+
+void Forth::word_find() {
+    Cell addr = pop_ds();
+    uint32_t uaddr = static_cast<uint16_t>(addr);
+    uint8_t len = c_fetch(uaddr);
+    std::string name;
+    for (uint8_t i = 0; i < len; ++i) {
+        char ch = static_cast<char>(c_fetch(uaddr + 1 + i));
+        name += static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    }
+    Word* w = lookup(name);
+    if (!w) {
+        push_ds(addr);
+        push_ds(0);
+        return;
+    }
+    int xt = find_xt(name);
+    push_ds(static_cast<Cell>(xt));
+    push_ds(w->immediate ? 1 : -1);
+}
+
+void Forth::word_tick() {
+    std::string token;
+    if (!parse_word(token)) {
+        throw std::runtime_error("WORD NAME EXPECTED");
+    }
+    std::string upper_name;
+    for (char c : token) {
+        upper_name += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    }
+    Word* w = lookup(upper_name);
+    if (!w) {
+        throw std::runtime_error("WORD NOT FOUND: " + token);
+    }
+    int xt = find_xt(upper_name);
+    push_ds(static_cast<Cell>(xt));
+}
+
+void Forth::word_to_body() {
+    Cell xt = pop_ds();
+    if (xt >= 0 && static_cast<size_t>(xt) < words.size() && words[xt].pfa != 0) {
+        push_ds(static_cast<Cell>(words[xt].pfa));
+    } else {
+        push_ds(static_cast<Cell>(xt + 2));
+    }
+}
+
+void Forth::init_primitives() {
+    define_primitive("DUP", [](Forth* f) { f->word_dup(); });
+    define_primitive("DROP", [](Forth* f) { f->word_drop(); });
+    define_primitive("SWAP", [](Forth* f) { f->word_swap(); });
+    define_primitive("OVER", [](Forth* f) { f->word_over(); });
+    define_primitive("?DUP", [](Forth* f) { f->word_qdup(); });
+    define_primitive("ROT", [](Forth* f) { f->word_rot(); });
+    define_primitive("-ROT", [](Forth* f) { f->word_nrot(); });
+    define_primitive("NIP", [](Forth* f) { f->word_nip(); });
+    define_primitive("TUCK", [](Forth* f) { f->word_tuck(); });
+    define_primitive("2DUP", [](Forth* f) { f->word_2dup(); });
+    define_primitive("2DROP", [](Forth* f) { f->word_2drop(); });
+    define_primitive("2SWAP", [](Forth* f) { f->word_2swap(); });
+    define_primitive("2OVER", [](Forth* f) { f->word_2over(); });
+
+    define_primitive(">R", [](Forth* f) { f->word_to_r(); });
+    define_primitive("R>", [](Forth* f) { f->word_r_from(); });
+    define_primitive("R@", [](Forth* f) { f->word_r_fetch(); });
+
+    define_primitive("@", [](Forth* f) { f->word_fetch(); });
+    define_primitive("!", [](Forth* f) { f->word_store(); });
+    define_primitive("C@", [](Forth* f) { f->word_c_fetch(); });
+    define_primitive("C!", [](Forth* f) { f->word_c_store(); });
+    define_primitive("+!", [](Forth* f) { f->word_plus_store(); });
+    define_primitive("?", [](Forth* f) { f->word_question(); });
+
+    define_primitive("FILL", [](Forth* f) { f->word_fill(); });
+    define_primitive("ERASE", [](Forth* f) { f->word_erase(); });
+    define_primitive("CMOVE", [](Forth* f) { f->word_cmove(); });
+    define_primitive("CMOVE>", [](Forth* f) { f->word_cmover(); });
+
+    define_primitive("+", [](Forth* f) { f->word_plus(); });
+    define_primitive("-", [](Forth* f) { f->word_minus(); });
+    define_primitive("*", [](Forth* f) { f->word_multiply(); });
+    define_primitive("/MOD", [](Forth* f) { f->word_slash_mod(); });
+    define_primitive("/", [](Forth* f) { f->word_slash(); });
+    define_primitive("MOD", [](Forth* f) { f->word_mod(); });
+    define_primitive("NEGATE", [](Forth* f) { f->word_negate(); });
+
+    define_primitive("1+", [](Forth* f) { f->word_one_plus(); });
+    define_primitive("1-", [](Forth* f) { f->word_one_minus(); });
+    define_primitive("2+", [](Forth* f) { f->word_two_plus(); });
+    define_primitive("2-", [](Forth* f) { f->word_two_minus(); });
+    define_primitive("2*", [](Forth* f) { f->word_two_star(); });
+    define_primitive("2/", [](Forth* f) { f->word_two_slash(); });
+    define_primitive("ABS", [](Forth* f) { f->word_abs(); });
+    define_primitive("MIN", [](Forth* f) { f->word_min(); });
+    define_primitive("MAX", [](Forth* f) { f->word_max(); });
+
+    define_primitive("AND", [](Forth* f) { f->word_and(); });
+    define_primitive("OR", [](Forth* f) { f->word_or(); });
+    define_primitive("XOR", [](Forth* f) { f->word_xor(); });
+    define_primitive("INVERT", [](Forth* f) { f->word_invert(); });
+
+    define_primitive("=", [](Forth* f) { f->word_equals(); });
+    define_primitive("<>", [](Forth* f) { f->word_not_equals(); });
+    define_primitive("<", [](Forth* f) { f->word_less(); });
+    define_primitive(">", [](Forth* f) { f->word_greater(); });
+    define_primitive("<=", [](Forth* f) { f->word_less_equal(); });
+    define_primitive(">=", [](Forth* f) { f->word_greater_equal(); });
+    define_primitive("0=", [](Forth* f) { f->word_zero_equals(); });
+    define_primitive("0<>", [](Forth* f) { f->word_zero_not_equals(); });
+    define_primitive("0<", [](Forth* f) { f->word_zero_less(); });
+    define_primitive("0>", [](Forth* f) { f->word_zero_greater(); });
+    define_primitive("U<", [](Forth* f) { f->word_u_less(); });
+    define_primitive("U>", [](Forth* f) { f->word_u_greater(); });
+    define_primitive("U<=", [](Forth* f) { f->word_u_less_equal(); });
+    define_primitive("U>=", [](Forth* f) { f->word_u_greater_equal(); });
+
+    define_primitive("KEY", [](Forth* f) { f->key(); });
+    define_primitive("EMIT", [](Forth* f) { f->emit(); });
+    define_primitive("CR", [](Forth* f) { f->cr(); });
+    define_primitive("SPACE", [](Forth* f) { f->space(); });
+    define_primitive("SPACES", [](Forth* f) { f->spaces(); });
+    define_primitive("TYPE", [](Forth* f) { f->type(); });
+    define_primitive("BYE", [](Forth* f) { f->bye(); });
+    define_primitive("EXPECT", [](Forth* f) { f->expect(); });
+    define_primitive("SPAN", [](Forth* f) { f->span(); });
+    define_primitive("QUIT", [](Forth* f) { f->quit(); });
+    define_primitive("ABORT", [](Forth* f) { f->abort(); });
+
+    define_primitive("FIND", [](Forth* f) { f->word_find(); });
+    define_primitive("'", [](Forth* f) { f->word_tick(); });
+    define_primitive(">BODY", [](Forth* f) { f->word_to_body(); });
 }
 
 } // namespace pforth
