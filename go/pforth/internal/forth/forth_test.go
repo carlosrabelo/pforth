@@ -682,3 +682,70 @@ func TestExtendedSingleStackManipulationWords(t *testing.T) {
 	underflow(func() { f.WordTuck() })
 	underflow(func() { f.DSPush(1); f.WordTuck() })
 }
+
+func TestDoubleCellStackManipulationWords(t *testing.T) {
+	out := &bytes.Buffer{}
+	f := New(&bytes.Buffer{}, out)
+
+	// 2DUP ( a b -- a b a b )
+	f.DSPush(10)
+	f.DSPush(20)
+	f.Word2Dup()
+	if len(f.DS) != 4 || f.DSPop() != 20 || f.DSPop() != 10 || f.DSPop() != 20 || f.DSPop() != 10 {
+		t.Fatal("2DUP failed")
+	}
+
+	// 2DROP ( a b -- )
+	f.DSPush(10)
+	f.DSPush(20)
+	f.Word2Drop()
+	if len(f.DS) != 0 {
+		t.Fatal("2DROP failed")
+	}
+
+	// 2SWAP ( a b c d -- c d a b )
+	f.DSPush(1)
+	f.DSPush(2)
+	f.DSPush(3)
+	f.DSPush(4)
+	f.Word2Swap()
+	if len(f.DS) != 4 || f.DSPop() != 2 || f.DSPop() != 1 || f.DSPop() != 4 || f.DSPop() != 3 {
+		t.Fatal("2SWAP failed")
+	}
+
+	// 2OVER ( a b c d -- a b c d a b )
+	f.DSPush(1)
+	f.DSPush(2)
+	f.DSPush(3)
+	f.DSPush(4)
+	f.Word2Over()
+	if len(f.DS) != 6 ||
+		f.DSPop() != 2 || f.DSPop() != 1 ||
+		f.DSPop() != 4 || f.DSPop() != 3 ||
+		f.DSPop() != 2 || f.DSPop() != 1 {
+		t.Fatal("2OVER failed")
+	}
+
+	// Underflow tests
+	underflow := func(fn func()) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Fatal("expected underflow panic")
+			}
+		}()
+		fn()
+	}
+
+	underflow(func() { f.Word2Dup() })
+	underflow(func() { f.DSPush(1); f.Word2Dup() })
+	underflow(func() { f.Word2Drop() })
+	underflow(func() { f.DSPush(1); f.Word2Drop() })
+	underflow(func() { f.Word2Swap() })
+	underflow(func() { f.DSPush(1); f.Word2Swap() })
+	underflow(func() { f.DSPush(1); f.DSPush(2); f.Word2Swap() })
+	underflow(func() { f.DSPush(1); f.DSPush(2); f.DSPush(3); f.Word2Swap() })
+	underflow(func() { f.Word2Over() })
+	underflow(func() { f.DSPush(1); f.Word2Over() })
+	underflow(func() { f.DSPush(1); f.DSPush(2); f.Word2Over() })
+	underflow(func() { f.DSPush(1); f.DSPush(2); f.DSPush(3); f.Word2Over() })
+}

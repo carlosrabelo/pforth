@@ -188,6 +188,48 @@ func (f *Forth) WordTuck() {
 	f.DSPush(b)
 }
 
+// Word2Dup duplicates top pair of cells: 2DUP ( a b -- a b a b )
+func (f *Forth) Word2Dup() {
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(a)
+	f.DSPush(b)
+	f.DSPush(a)
+	f.DSPush(b)
+}
+
+// Word2Drop removes top pair of cells: 2DROP ( a b -- )
+func (f *Forth) Word2Drop() {
+	_ = f.DSPop()
+	_ = f.DSPop()
+}
+
+// Word2Swap exchanges top two pairs of cells: 2SWAP ( a b c d -- c d a b )
+func (f *Forth) Word2Swap() {
+	d := f.DSPop()
+	c := f.DSPop()
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(c)
+	f.DSPush(d)
+	f.DSPush(a)
+	f.DSPush(b)
+}
+
+// Word2Over copies third and fourth items to top: 2OVER ( a b c d -- a b c d a b )
+func (f *Forth) Word2Over() {
+	d := f.DSPop()
+	c := f.DSPop()
+	b := f.DSPop()
+	a := f.DSPop()
+	f.DSPush(a)
+	f.DSPush(b)
+	f.DSPush(c)
+	f.DSPush(d)
+	f.DSPush(a)
+	f.DSPush(b)
+}
+
 // CFetch reads a byte from 64KB memory.
 func (f *Forth) CFetch(addr int) byte {
 	if addr < 0 || addr >= len(f.Memory) {
