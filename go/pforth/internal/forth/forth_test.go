@@ -117,3 +117,76 @@ func TestStackUnderflow(t *testing.T) {
 
 	f.DSPop()
 }
+
+func TestExpectAndSpan(t *testing.T) {
+	in := strings.NewReader("ForthCode\r\nRest")
+	out := &bytes.Buffer{}
+	f := New(in, out)
+
+	bufAddr := 3000
+	f.DSPush(Cell(bufAddr))
+	f.DSPush(20) // maxlen
+	f.WordExpect()
+
+	// SPAN check
+	if f.Fetch(SpanAddr) != 9 {
+		t.Fatalf("expected SPAN = 9, got %d", f.Fetch(SpanAddr))
+	}
+
+	// Read content from memory
+	var s strings.Builder
+	for i := 0; i < 9; i++ {
+		s.WriteByte(f.CFetch(bufAddr + i))
+	}
+	if s.String() != "ForthCode" {
+		t.Fatalf("expected 'ForthCode', got %q", s.String())
+	}
+
+	// WordSpan stack check
+	f.WordSpan()
+	if f.DSPop() != Cell(SpanAddr) {
+		t.Fatalf("expected WordSpan to push %d", SpanAddr)
+	}
+
+	// Truncate at maxlen
+	in2 := strings.NewReader("1234567890\n")
+	f2 := New(in2, out)
+	f2.DSPush(Cell(bufAddr))
+	f2.DSPush(4)
+	f2.WordExpect()
+	if f2.Fetch(SpanAddr) != 4 {
+		t.Fatalf("expected SPAN = 4, got %d", f2.Fetch(SpanAddr))
+	}
+}
+
+func TestReadLineAndTIB(t *testing.T) {
+	in := strings.NewReader("line1\r\nline2\nline3")
+	out := &bytes.Buffer{}
+	f := New(in, out)
+
+	l1, err := f.ReadLine()
+	if err != nil || l1 != "line1" {
+		t.Fatalf("line1 error: %v, got %q", err, l1)
+	}
+
+	l2, err := f.ReadLine()
+	if err != nil || l2 != "line2" {
+		t.Fatalf("line2 error: %v, got %q", err, l2)
+	}
+
+	l3, err := f.ReadLine()
+	if err != nil || l3 != "line3" {
+		t.Fatalf("line3 error: %v, got %q", err, l3)
+	}
+
+	_, err = f.ReadLine()
+	if err == nil {
+		t.Fatal("expected EOF on 4th ReadLine")
+	}
+
+	// SetLine and TIB
+	f.SetLine("10 20 +")
+	if string(f.TIB) != "10 20 +" || f.IN != 0 {
+		t.Fatalf("SetLine failed, TIB=%q, IN=%d", string(f.TIB), f.IN)
+	}
+}
