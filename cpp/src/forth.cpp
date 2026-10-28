@@ -1218,6 +1218,80 @@ void Forth::word_else() {
     push_ds(static_cast<Cell>(pos2));
 }
 
+void Forth::word_begin() {
+    if (!state) {
+        throw std::runtime_error("BEGIN ONLY IN COMPILATION");
+    }
+    push_ds(static_cast<Cell>(compile_list.size()));
+}
+
+void Forth::word_until() {
+    if (!state) {
+        throw std::runtime_error("UNTIL ONLY IN COMPILATION");
+    }
+    int dest = pop_ds();
+    int xt = find_xt("0BRANCH");
+    if (xt < 0) {
+        define_primitive("0BRANCH", [](Forth* f) { f->word_zero_branch(); });
+        xt = find_xt("0BRANCH");
+    }
+    compile_list.push_back(static_cast<Cell>(xt));
+    Cell offset = static_cast<Cell>(dest - compile_list.size());
+    compile_list.push_back(offset);
+}
+
+void Forth::word_again() {
+    if (!state) {
+        throw std::runtime_error("AGAIN ONLY IN COMPILATION");
+    }
+    int dest = pop_ds();
+    int xt = find_xt("BRANCH");
+    if (xt < 0) {
+        define_primitive("BRANCH", [](Forth* f) { f->word_branch(); });
+        xt = find_xt("BRANCH");
+    }
+    compile_list.push_back(static_cast<Cell>(xt));
+    Cell offset = static_cast<Cell>(dest - compile_list.size());
+    compile_list.push_back(offset);
+}
+
+void Forth::word_while() {
+    if (!state) {
+        throw std::runtime_error("WHILE ONLY IN COMPILATION");
+    }
+    int dest = pop_ds();
+    int xt = find_xt("0BRANCH");
+    if (xt < 0) {
+        define_primitive("0BRANCH", [](Forth* f) { f->word_zero_branch(); });
+        xt = find_xt("0BRANCH");
+    }
+    compile_list.push_back(static_cast<Cell>(xt));
+    compile_list.push_back(0);
+    push_ds(static_cast<Cell>(dest));
+    push_ds(static_cast<Cell>(compile_list.size() - 1));
+}
+
+void Forth::word_repeat() {
+    if (!state) {
+        throw std::runtime_error("REPEAT ONLY IN COMPILATION");
+    }
+    int orig = pop_ds();
+    int dest = pop_ds();
+    int branch_xt = find_xt("BRANCH");
+    if (branch_xt < 0) {
+        define_primitive("BRANCH", [](Forth* f) { f->word_branch(); });
+        branch_xt = find_xt("BRANCH");
+    }
+    compile_list.push_back(static_cast<Cell>(branch_xt));
+    Cell back = static_cast<Cell>(dest - compile_list.size());
+    compile_list.push_back(back);
+    if (orig < 0 || orig >= static_cast<int>(compile_list.size())) {
+        throw std::runtime_error("INVALID BRANCH TARGET");
+    }
+    Cell forward = static_cast<Cell>(compile_list.size() - orig);
+    compile_list[orig] = forward;
+}
+
 void Forth::init_primitives() {
     define_primitive("DUP", [](Forth* f) { f->word_dup(); });
     define_primitive("DROP", [](Forth* f) { f->word_drop(); });
@@ -1340,6 +1414,12 @@ void Forth::init_primitives() {
     define_immediate("IF", [](Forth* f) { f->word_if(); });
     define_immediate("THEN", [](Forth* f) { f->word_then(); });
     define_immediate("ELSE", [](Forth* f) { f->word_else(); });
+
+    define_immediate("BEGIN", [](Forth* f) { f->word_begin(); });
+    define_immediate("UNTIL", [](Forth* f) { f->word_until(); });
+    define_immediate("AGAIN", [](Forth* f) { f->word_again(); });
+    define_immediate("WHILE", [](Forth* f) { f->word_while(); });
+    define_immediate("REPEAT", [](Forth* f) { f->word_repeat(); });
 }
 
 } // namespace pforth

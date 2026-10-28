@@ -131,3 +131,33 @@ TEST_CASE("Control Flow - Conditional branching compiler (IF, ELSE, THEN)", "[co
     REQUIRE_THROWS_WITH(f.interpret_line("ELSE"), "ELSE ONLY IN COMPILATION");
     REQUIRE_THROWS_WITH(f.interpret_line("THEN"), "THEN ONLY IN COMPILATION");
 }
+
+TEST_CASE("Control Flow - Indefinite loop constructs (BEGIN, UNTIL, AGAIN, WHILE, REPEAT)", "[control_flow]") {
+    pforth::Forth f;
+
+    // BEGIN ... UNTIL (sum 1..N)
+    f.interpret_line(": SUM_UNTIL 0 SWAP BEGIN DUP ROT + SWAP 1- DUP 0= UNTIL DROP ;");
+    f.interpret_line("5 SUM_UNTIL");
+    REQUIRE(f.pop_ds() == 15);
+    f.interpret_line("10 SUM_UNTIL");
+    REQUIRE(f.pop_ds() == 55);
+
+    // BEGIN ... WHILE ... REPEAT
+    f.interpret_line(": SUM_WHILE 0 SWAP BEGIN DUP 0> WHILE DUP ROT + SWAP 1- REPEAT DROP ;");
+    f.interpret_line("5 SUM_WHILE");
+    REQUIRE(f.pop_ds() == 15);
+    f.interpret_line("0 SUM_WHILE");
+    REQUIRE(f.pop_ds() == 0);
+
+    // BEGIN ... AGAIN with EXIT inside IF
+    f.interpret_line(": COUNT_AGAIN BEGIN DUP 0= IF EXIT THEN 1- AGAIN ;");
+    f.interpret_line("3 COUNT_AGAIN");
+    REQUIRE(f.pop_ds() == 0);
+
+    // Error handling outside compilation state
+    REQUIRE_THROWS_WITH(f.interpret_line("BEGIN"), "BEGIN ONLY IN COMPILATION");
+    REQUIRE_THROWS_WITH(f.interpret_line("UNTIL"), "UNTIL ONLY IN COMPILATION");
+    REQUIRE_THROWS_WITH(f.interpret_line("AGAIN"), "AGAIN ONLY IN COMPILATION");
+    REQUIRE_THROWS_WITH(f.interpret_line("WHILE"), "WHILE ONLY IN COMPILATION");
+    REQUIRE_THROWS_WITH(f.interpret_line("REPEAT"), "REPEAT ONLY IN COMPILATION");
+}
